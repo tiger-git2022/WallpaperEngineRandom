@@ -2,6 +2,12 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.0.1] - 2026-10-23
+
+### 改进
+- 托盘图标的右键菜单改成亚克力样式：Windows 11 系统菜单那种磨砂半透明背景、圆角和 Fluent 图标，随深浅色主题变化，文字更清楚（和 Claude 自动审批的托盘菜单一致）。Windows 10 上用纯色背景。
+- 托盘菜单可以用方向键选择、回车执行、Esc 关闭。
+
 ## [1.0.0] - 未发布
 
 首个公开版本。
