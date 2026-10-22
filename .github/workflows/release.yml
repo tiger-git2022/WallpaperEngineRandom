@@ -29,7 +29,11 @@ jobs:
         run: |
           $tag = "${{ github.ref_name }}"
           $manual = "${{ inputs.version }}".Trim()
-          if ($manual) { $tag = "v" + $manual.TrimStart('v') }
+          if ($manual) {
+            if ($manual -notmatch '^v?\d+\.\d+\.\d+$') { Write-Error "版本号 '$manual' 格式不对，应为 1.0.1 这样"; exit 1 }
+            $tag = "v" + $manual.TrimStart('v')
+            "PUBLISH=true" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          }
           if ($tag -match '^v(\d+)\.(\d+)\.(\d+)$') {
             $ver = "$($Matches[1]).$($Matches[2]).$($Matches[3])"
           } else {
@@ -60,7 +64,7 @@ jobs:
           path: dist/*.zip
 
       - name: Release
-        if: startsWith(github.ref, 'refs/tags/v') || inputs.version != ''
+        if: startsWith(github.ref, 'refs/tags/v') || env.PUBLISH == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.VERSION }}
