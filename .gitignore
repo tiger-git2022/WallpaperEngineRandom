@@ -1,0 +1,50 @@
+# 编译产物
+bin/
+obj/
+build*/
+*.pdb
+*.exe
+*.dll
+*.zip
+.vs/
+*.user
+
+# 运行时数据（配置、进度、日志都在 exe 旁边生成）
+we_random.*.json
+we_random.log
+wer_portrait.json*
+fps30/
+export_job_items*.json
+
+# 安卓相关一律不进本仓库
+*.apk
+*.apks
+*.idsig
+*.so
+*.smali
+*.mpkg
+*.onnx
+
+# 签名与密钥
+*.p12
+*.pfx
+*.pem
+*.jks
+*.keystore
+*.pk8
+*.key
+.env*
+
+# 个人数据与截图
+prefs_backup/
+*_preferences.xml
+*.jpg
+*.mp4
+/*.png
+*.csv
+*.txt
+!windows/**/*.png
+
+# Python
+__pycache__/
+*.pyc

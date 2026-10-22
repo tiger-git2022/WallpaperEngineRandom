@@ -1,0 +1,380 @@
+<ui:FluentWindow x:Class="WERandom.MainWindow"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                 Title="WE 加权轮播"
+                 Width="1060" Height="720" MinWidth="860" MinHeight="560"
+                 WindowStartupLocation="CenterScreen"
+                 ExtendsContentIntoTitleBar="True"
+                 WindowBackdropType="Mica"
+                 WindowCornerPreference="Round"
+                 Icon="pack://application:,,,/WERandom;component/WERandom/icon.png">
+    <ui:FluentWindow.Resources>
+        <Style x:Key="NavButton" TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="Appearance" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="12,9"/>
+            <Setter Property="Margin" Value="0,2"/>
+            <Setter Property="FontSize" Value="14"/>
+        </Style>
+        <Style x:Key="Section" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin" Value="2,18,0,8"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}"/>
+        </Style>
+        <Style x:Key="Muted" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        <Style TargetType="ui:CardControl" BasedOn="{StaticResource {x:Type ui:CardControl}}">
+            <Setter Property="Margin" Value="0,0,0,4"/>
+        </Style>
+    </ui:FluentWindow.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- one grey layer over the whole window (acrylic), so the navigation and the pages look alike -->
+        <Rectangle x:Name="Tint" Grid.RowSpan="2" IsHitTestVisible="False" Opacity="0"/>
+
+        <ui:TitleBar Grid.Row="0" Title="WE 加权轮播">
+            <ui:TitleBar.Icon>
+                <ui:ImageIcon Source="pack://application:,,,/WERandom;component/WERandom/icon.png"/>
+            </ui:TitleBar.Icon>
+        </ui:TitleBar>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="220"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- navigation -->
+            <DockPanel Grid.Column="0" Margin="10,4,6,12">
+                <TextBlock x:Name="SideStatus" DockPanel.Dock="Top" Style="{StaticResource Muted}" Margin="8,2,0,14"/>
+                <StackPanel x:Name="Nav">
+                    <ui:Button x:Name="NavHome" Style="{StaticResource NavButton}" Tag="0" Click="Nav_Click">
+                        <StackPanel Orientation="Horizontal"><ui:SymbolIcon Symbol="Home24" Margin="0,0,12,0"/><TextBlock Text="概览"/></StackPanel>
+                    </ui:Button>
+                    <ui:Button Style="{StaticResource NavButton}" Tag="1" Click="Nav_Click">
+                        <StackPanel Orientation="Horizontal"><ui:SymbolIcon Symbol="Settings24" Margin="0,0,12,0"/><TextBlock Text="基本设置"/></StackPanel>
+                    </ui:Button>
+                    <ui:Button Style="{StaticResource NavButton}" Tag="2" Click="Nav_Click">
+                        <StackPanel Orientation="Horizontal"><ui:SymbolIcon Symbol="DataBarVertical24" Margin="0,0,12,0"/><TextBlock Text="权重档位"/></StackPanel>
+                    </ui:Button>
+                    <ui:Button Style="{StaticResource NavButton}" Tag="3" Click="Nav_Click">
+                        <StackPanel Orientation="Horizontal"><ui:SymbolIcon Symbol="ImageMultiple24" Margin="0,0,12,0"/><TextBlock Text="壁纸预览"/></StackPanel>
+                    </ui:Button>
+                    <ui:Button Style="{StaticResource NavButton}" Tag="4" Click="Nav_Click">
+                        <StackPanel Orientation="Horizontal"><ui:SymbolIcon Symbol="PhoneLaptop24" Margin="0,0,12,0"/><TextBlock Text="设备同步"/></StackPanel>
+                    </ui:Button>
+                </StackPanel>
+            </DockPanel>
+
+            <!-- pages + footer -->
+            <Grid Grid.Column="1" Margin="0,0,0,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <TextBlock x:Name="Header" Grid.Row="0" FontSize="26" FontWeight="SemiBold" Margin="24,6,24,10"/>
+
+                <Border x:Name="PageLayer" Grid.Row="1" CornerRadius="8,0,0,0" Background="{DynamicResource LayerFillColorDefaultBrush}"
+                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1,1,0,0">
+                    <Grid>
+                        <!-- 0 概览 -->
+                        <ScrollViewer x:Name="PageHome" Padding="24,16">
+                            <StackPanel>
+                                <ui:CardControl Icon="{ui:SymbolIcon Image24}">
+                                    <ui:CardControl.Header>
+                                        <StackPanel>
+                                            <TextBlock Text="当前壁纸" FontWeight="SemiBold"/>
+                                            <TextBlock x:Name="HomeCurrent" Style="{StaticResource Muted}" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                    </ui:CardControl.Header>
+                                    <ui:Button Content="立即切换一张" Appearance="Primary" Icon="{ui:SymbolIcon ArrowNext24}" Click="SwitchNow_Click"/>
+                                </ui:CardControl>
+                                <ui:CardControl Icon="{ui:SymbolIcon Timer24}">
+                                    <ui:CardControl.Header>
+                                        <StackPanel>
+                                            <TextBlock Text="自动切换" FontWeight="SemiBold"/>
+                                            <TextBlock x:Name="HomeStatus" Style="{StaticResource Muted}" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                    </ui:CardControl.Header>
+                                    <ui:Button x:Name="PauseButton" Content="暂停" Click="Pause_Click"/>
+                                </ui:CardControl>
+                                <ui:CardControl Icon="{ui:SymbolIcon ArrowRepeatAll24}">
+                                    <ui:CardControl.Header>
+                                        <StackPanel>
+                                            <TextBlock Text="本轮进度" FontWeight="SemiBold"/>
+                                            <TextBlock x:Name="HomeRound" Style="{StaticResource Muted}" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                    </ui:CardControl.Header>
+                                    <ui:Button Content="重新开一轮" Click="ResetRound_Click"/>
+                                </ui:CardControl>
+                                <ui:CardControl Icon="{ui:SymbolIcon PhoneLaptop24}">
+                                    <ui:CardControl.Header>
+                                        <StackPanel>
+                                            <TextBlock Text="平板 / 手机" FontWeight="SemiBold"/>
+                                            <TextBlock x:Name="HomeDevices" Style="{StaticResource Muted}" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                    </ui:CardControl.Header>
+                                    <ui:Button Content="查看设备同步" Tag="4" Click="Nav_Click"/>
+                                </ui:CardControl>
+                                <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                                    <ui:Button Content="查看日志" Icon="{ui:SymbolIcon DocumentText24}" Margin="0,0,8,0" Click="OpenLog_Click"/>
+                                    <ui:Button Content="打开程序文件夹" Icon="{ui:SymbolIcon Folder24}" Click="OpenFolder_Click"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </ScrollViewer>
+
+                        <!-- 1 基本设置 -->
+                        <ScrollViewer x:Name="PageBasic" Padding="24,6,24,16" Visibility="Collapsed">
+                            <StackPanel>
+                                <TextBlock Text="外观" Style="{StaticResource Section}"/>
+                                <ui:CardControl Icon="{ui:SymbolIcon DarkTheme24}" Header="主题">
+                                    <ComboBox x:Name="ThemeBox" MinWidth="180" SelectionChanged="Appearance_Changed">
+                                        <ComboBoxItem Content="跟随系统"/>
+                                        <ComboBoxItem Content="日间（浅色）"/>
+                                        <ComboBoxItem Content="夜间（深色）"/>
+                                    </ComboBox>
+                                </ui:CardControl>
+                                <ui:CardControl Icon="{ui:SymbolIcon Blur24}">
+                                    <ui:CardControl.Header>
+                                        <StackPanel>
+                                            <TextBlock Text="窗口背景"/>
+                                            <TextBlock Text="云母：取桌面壁纸的颜色；亚克力：半透明，透出后面模糊的窗口" Style="{StaticResource Muted}"/>
+                                        </StackPanel>
+                                    </ui:CardControl.Header>
+                                    <ComboBox x:Name="BackdropBox" MinWidth="180" SelectionChanged="Appearance_Changed">
+                                        <ComboBoxItem Content="云母"/>
+                                        <ComboBoxItem Content="亚克力（半透明）"/>
+                                        <ComboBoxItem Content="无"/>
+                                    </ComboBox>
+                                </ui:CardControl>
+                                <ui:CardControl x:Name="TintCard" Icon="{ui:SymbolIcon Color24}">
+                                    <ui:CardControl.Header>
+                                        <StackPanel>
+                                            <TextBlock Text="亚克力遮罩不透明度"/>
+                                            <TextBlock Text="深色主题用深灰、浅色主题用浅灰盖在半透明背景上；越大越不透明" Style="{StaticResource Muted}"/>
+                                        </StackPanel>
+                                    </ui:CardControl.Header>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Slider x:Name="TintSlider" Width="200" Minimum="0" Maximum="100" SmallChange="1" LargeChange="10"
+                                                IsSnapToTickEnabled="True" TickFrequency="1" VerticalAlignment="Center" ValueChanged="Tint_Changed"/>
+                                        <TextBlock x:Name="TintText" Width="44" TextAlignment="Right" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                    </StackPanel>
+                                </ui:CardControl>
+
+                                <TextBlock Text="切换" Style="{StaticResource Section}"/>
+                                <ui:CardControl Icon="{ui:SymbolIcon Timer24}" Header="切换间隔（分钟）">
+                                    <ui:NumberBox x:Name="Interval" Minimum="1" Maximum="1440" SmallChange="1" MinWidth="140" MaxDecimalPlaces="0"/>
+                                </ui:CardControl>
+                                <ui:CardControl Icon="{ui:SymbolIcon Power24}" Header="开机自动启动" >
+                                    <ui:ToggleSwitch x:Name="Startup"/>
+                                </ui:CardControl>
+                                <ui:CardControl Icon="{ui:SymbolIcon ArrowSync24}" Header="Wallpaper Engine 被重新打开时，立刻切换一张">
+                                    <ui:ToggleSwitch x:Name="SwitchOnStart"/>
+                                </ui:CardControl>
+
+                                <TextBlock Text="什么时候计时" Style="{StaticResource Section}"/>
+                                <ui:CardControl Icon="{ui:SymbolIcon Eye24}" Header="只在能看到桌面时计时（WE 在运行、未锁屏、未睡眠）">
+                                    <ui:ToggleSwitch x:Name="OnlyVisible"/>
+                                </ui:CardControl>
+                                <ui:CardControl Icon="{ui:SymbolIcon FullScreenMaximize24}" Header="前台有全屏程序时暂停计时（玩游戏、看视频时）">
+                                    <ui:ToggleSwitch x:Name="Fullscreen"/>
+                                </ui:CardControl>
+                                <ui:CardControl Icon="{ui:SymbolIcon Keyboard24}">
+                                    <ui:CardControl.Header>
+                                        <StackPanel>
+                                            <TextBlock Text="键盘鼠标多少分钟没动过就暂停计时"/>
+                                            <TextBlock Text="0 = 不判断" Style="{StaticResource Muted}"/>
+                                        </StackPanel>
+                                    </ui:CardControl.Header>
+                                    <ui:NumberBox x:Name="Idle" Minimum="0" Maximum="600" SmallChange="1" MinWidth="140" MaxDecimalPlaces="0"/>
+                                </ui:CardControl>
+
+                                <TextBlock Text="播放方式" Style="{StaticResource Section}"/>
+                                <ui:CardControl Icon="{ui:SymbolIcon ArrowShuffle24}" Header="播放模式">
+                                    <ComboBox x:Name="Mode" MinWidth="340">
+                                        <ComboBoxItem Content="分组轮播：先放完最新一档，再放下一档（推荐）"/>
+                                        <ComboBoxItem Content="混合轮播：各档混在一起均匀打散"/>
+                                        <ComboBoxItem Content="纯加权随机：次数只是相对概率"/>
+                                    </ComboBox>
+                                </ui:CardControl>
+                                <ui:CardControl Icon="{ui:SymbolIcon ArrowSwap24}" Header="壁纸在一轮中途跨入下一档（或改了次数）时，立刻调整本轮剩余次数">
+                                    <ui:ToggleSwitch x:Name="Rebalance"/>
+                                </ui:CardControl>
+                                <ui:CardControl Icon="{ui:SymbolIcon History24}">
+                                    <ui:CardControl.Header>
+                                        <StackPanel>
+                                            <TextBlock Text="随机模式防重复：最近播过的几张不马上重复"/>
+                                            <TextBlock Text="轮播模式不需要" Style="{StaticResource Muted}"/>
+                                        </StackPanel>
+                                    </ui:CardControl.Header>
+                                    <ui:NumberBox x:Name="AvoidRecent" Minimum="0" Maximum="100" SmallChange="1" MinWidth="140" MaxDecimalPlaces="0"/>
+                                </ui:CardControl>
+
+                                <TextBlock Text="显示器" Style="{StaticResource Section}"/>
+                                <ui:CardControl Icon="{ui:SymbolIcon Desktop24}" Header="应用到">
+                                    <StackPanel Orientation="Horizontal">
+                                        <RadioButton x:Name="MonAll" Content="所有显示器" GroupName="mon" Margin="0,0,12,0"/>
+                                        <RadioButton x:Name="MonList" Content="指定" GroupName="mon" Margin="0,0,8,0"/>
+                                        <ui:TextBox x:Name="MonText" MinWidth="110" PlaceholderText="0,1"/>
+                                    </StackPanel>
+                                </ui:CardControl>
+                                <ui:CardControl Icon="{ui:SymbolIcon Copy24}" Header="多显示器用同一张">
+                                    <ui:ToggleSwitch x:Name="SameOnAll"/>
+                                </ui:CardControl>
+
+                                <TextBlock Text="路径与过滤" Style="{StaticResource Section}"/>
+                                <ui:CardControl Icon="{ui:SymbolIcon AppFolder24}">
+                                    <ui:CardControl.Header>
+                                        <StackPanel>
+                                            <TextBlock Text="Wallpaper Engine 程序"/>
+                                            <TextBlock Text="留空 = 自动检测" Style="{StaticResource Muted}"/>
+                                        </StackPanel>
+                                    </ui:CardControl.Header>
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:TextBox x:Name="ExePath" Width="340" Margin="0,0,8,0"/>
+                                        <ui:Button Content="浏览…" Click="BrowseExe_Click"/>
+                                    </StackPanel>
+                                </ui:CardControl>
+                                <ui:CardControl Icon="{ui:SymbolIcon Folder24}">
+                                    <ui:CardControl.Header>
+                                        <StackPanel>
+                                            <TextBlock Text="创意工坊目录"/>
+                                            <TextBlock Text="留空 = 自动检测" Style="{StaticResource Muted}"/>
+                                        </StackPanel>
+                                    </ui:CardControl.Header>
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:TextBox x:Name="WorkshopPath" Width="340" Margin="0,0,8,0"/>
+                                        <ui:Button Content="浏览…" Click="BrowseWorkshop_Click"/>
+                                    </StackPanel>
+                                </ui:CardControl>
+                                <ui:CardControl Icon="{ui:SymbolIcon Prohibited24}">
+                                    <ui:CardControl.Header>
+                                        <StackPanel>
+                                            <TextBlock Text="永不播放的 ID"/>
+                                            <TextBlock Text="逗号分隔，ID 见「壁纸预览」" Style="{StaticResource Muted}"/>
+                                        </StackPanel>
+                                    </ui:CardControl.Header>
+                                    <ui:TextBox x:Name="ExcludeIds" Width="420"/>
+                                </ui:CardControl>
+                                <ui:CardControl Icon="{ui:SymbolIcon Filter24}">
+                                    <ui:CardControl.Header>
+                                        <StackPanel>
+                                            <TextBlock Text="只播放类型"/>
+                                            <TextBlock Text="都不勾 = 全部类型" Style="{StaticResource Muted}"/>
+                                        </StackPanel>
+                                    </ui:CardControl.Header>
+                                    <StackPanel Orientation="Horizontal">
+                                        <CheckBox x:Name="TScene" Content="场景" Margin="0,0,12,0"/>
+                                        <CheckBox x:Name="TVideo" Content="视频" Margin="0,0,12,0"/>
+                                        <CheckBox x:Name="TWeb" Content="网页"/>
+                                    </StackPanel>
+                                </ui:CardControl>
+                            </StackPanel>
+                        </ScrollViewer>
+
+                        <!-- 2 权重档位 -->
+                        <DockPanel x:Name="PageTier" Margin="24,12,24,12" Visibility="Collapsed">
+                            <TextBlock DockPanel.Dock="Top" Style="{StaticResource Muted}" Margin="0,0,0,12"
+                                       Text="按壁纸的「添加时间」分档：添加时间不超过某档月数的壁纸，每一轮出现该档的次数。次数 0 = 不播放；月数可以是小数（0.5 = 半个月）。在最后的空行输入可新增档位，选中一行按 Delete 删除。"/>
+                            <ui:CardControl DockPanel.Dock="Bottom" Icon="{ui:SymbolIcon CalendarClock24}" Margin="0,12,0,0">
+                                <ui:CardControl.Header>
+                                    <StackPanel>
+                                        <TextBlock Text="超过最后一档的更老壁纸，每轮出现次数"/>
+                                        <TextBlock Text="0 = 不再播放" Style="{StaticResource Muted}"/>
+                                    </StackPanel>
+                                </ui:CardControl.Header>
+                                <ui:NumberBox x:Name="Older" Minimum="0" Maximum="1000" SmallChange="0.5" MinWidth="140" MaxDecimalPlaces="1"/>
+                            </ui:CardControl>
+                            <DataGrid x:Name="TierGrid" AutoGenerateColumns="False" CanUserAddRows="True" CanUserDeleteRows="True"
+                                      HeadersVisibility="Column" SelectionMode="Single">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="添加时间不超过（月）" Binding="{Binding Months, UpdateSourceTrigger=PropertyChanged}" Width="*"/>
+                                    <DataGridTextColumn Header="每轮出现次数" Binding="{Binding Weight, UpdateSourceTrigger=PropertyChanged}" Width="*"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </DockPanel>
+
+                        <!-- 3 壁纸预览 -->
+                        <DockPanel x:Name="PagePreview" Margin="24,12,24,12" Visibility="Collapsed">
+                            <TextBlock x:Name="Summary" DockPanel.Dock="Top" Style="{StaticResource Muted}" Margin="0,0,0,10" Text="…"/>
+                            <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,10,0,0">
+                                <ui:Button Content="刷新预览" Icon="{ui:SymbolIcon ArrowClockwise24}" Margin="0,0,8,0" Click="RefreshPreview_Click"/>
+                                <ui:Button Content="重新开一轮" Margin="0,0,8,0" Click="ResetRound_Click"/>
+                                <TextBlock Text="预览按已保存的设置计算；改了设置请先保存。" Style="{StaticResource Muted}" VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <DataGrid x:Name="PreviewGrid" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column"
+                                      CanUserAddRows="False" EnableRowVirtualization="True">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="ID" Binding="{Binding Id}" Width="110"/>
+                                    <DataGridTextColumn Header="标题" Binding="{Binding Title}" Width="*"/>
+                                    <DataGridTextColumn Header="类型" Binding="{Binding Type}" Width="70"/>
+                                    <DataGridTextColumn Header="添加日期" Binding="{Binding Added}" Width="100"/>
+                                    <DataGridTextColumn Header="天数" Binding="{Binding Days}" Width="60"/>
+                                    <DataGridTextColumn Header="档位" Binding="{Binding Tier}" Width="80"/>
+                                    <DataGridTextColumn Header="每轮次数" Binding="{Binding Weight}" Width="80"/>
+                                    <DataGridTextColumn Header="本轮已播 / 剩余" Binding="{Binding Played}" Width="120"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </DockPanel>
+
+                        <!-- 4 设备同步 -->
+                        <ScrollViewer x:Name="PageDevices" Padding="24,16" Visibility="Collapsed">
+                            <StackPanel>
+                                <ui:CardControl Icon="{ui:SymbolIcon PersonSquare24}">
+                                    <ui:CardControl.Header>
+                                        <StackPanel>
+                                            <TextBlock Text="人物对齐数据" FontWeight="SemiBold"/>
+                                            <TextBlock x:Name="PortraitState" Style="{StaticResource Muted}" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                    </ui:CardControl.Header>
+                                    <ui:Button Content="立即分析新壁纸" Appearance="Primary" Icon="{ui:SymbolIcon Search24}" Click="Analyse_Click"/>
+                                </ui:CardControl>
+                                <ui:CardControl Icon="{ui:SymbolIcon VideoClip24}">
+                                    <ui:CardControl.Header>
+                                        <StackPanel>
+                                            <TextBlock Text="30 帧转码" FontWeight="SemiBold"/>
+                                            <TextBlock x:Name="Fps30State" Style="{StaticResource Muted}" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                    </ui:CardControl.Header>
+                                </ui:CardControl>
+                                <ui:CardControl Icon="{ui:SymbolIcon Wifi124}">
+                                    <ui:CardControl.Header>
+                                        <StackPanel>
+                                            <TextBlock Text="局域网服务" FontWeight="SemiBold"/>
+                                            <TextBlock x:Name="LanState" Style="{StaticResource Muted}" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                    </ui:CardControl.Header>
+                                </ui:CardControl>
+                                <TextBlock Style="{StaticResource Muted}" Margin="2,14,0,0"
+                                           Text="平板和手机在 App 的播放列表设置里点「同步」：会先让电脑分析新壁纸，再下载对齐表，并把超过 30 帧的视频转成 30 帧。电脑和设备要连同一个局域网。"/>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Grid>
+                </Border>
+
+                <!-- footer -->
+                <Border Grid.Row="2" Padding="24,10,24,12" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}">
+                    <DockPanel>
+                        <TextBlock x:Name="SaveStatus" Style="{StaticResource Muted}" VerticalAlignment="Center"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <ui:Button Content="保存并重新开一轮" Margin="0,0,8,0" Click="SaveReset_Click"/>
+                            <ui:Button Content="保存" Appearance="Primary" MinWidth="96" Click="Save_Click"/>
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
+            </Grid>
+        </Grid>
+    </Grid>
+</ui:FluentWindow>
