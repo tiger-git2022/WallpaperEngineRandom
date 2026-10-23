@@ -1,7 +1,12 @@
 name: Release
 
+# 推送到 main 时：取 CHANGELOG.md 最上面的版本（如 “## [1.0.2] - 2026-10-24”），
+#   如果还没有对应的 v版本号 标签，就自动发布并创建标签；否则只编译。标成“未发布”的版本不会发布。
+# 推送 v* 标签时：按标签的版本号发布。
+# 手动运行时：填版本号就发布，留空只编译。
 on:
   push:
+    branches: [main]
     tags:
       - "v*.*.*"
   workflow_dispatch:
@@ -10,6 +15,11 @@ on:
         description: "填版本号（如 1.0.1）就发布到 Releases 并自动创建 v版本号 标签；留空只编译"
         type: string
         default: ""
+
+# 同一分支的运行排队执行，后一次能看到前一次刚建的标签，避免同一版本号发布两次
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -33,6 +43,16 @@ jobs:
             if ($manual -notmatch '^v?\d+\.\d+\.\d+$') { Write-Error "版本号 '$manual' 格式不对，应为 1.0.1 这样"; exit 1 }
             $tag = "v" + $manual.TrimStart('v')
             "PUBLISH=true" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          }
+          if ("${{ github.event_name }}" -eq "push" -and "${{ github.ref }}" -eq "refs/heads/main") {
+            $tag = ""
+            $m = Select-String -Path CHANGELOG.md -Encoding utf8 -Pattern '^## \[(\d+\.\d+\.\d+)\] - (.+)$' | Select-Object -First 1
+            if ($m -and $m.Matches[0].Groups[2].Value -notmatch '未发布') {
+              $tag = "v" + $m.Matches[0].Groups[1].Value
+              $refs = git ls-remote --tags origin "refs/tags/$tag"
+              if ($LASTEXITCODE) { Write-Error "查询标签失败"; exit 1 }
+              if ($refs) { "$tag 已经发布过，这次只编译" } else { "$tag 还没发布，这次自动发布"; "PUBLISH=true" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8 }
+            } else { "CHANGELOG.md 最上面的版本还没标日期，这次只编译" }
           }
           if ($tag -match '^v(\d+)\.(\d+)\.(\d+)$') {
             $ver = "$($Matches[1]).$($Matches[2]).$($Matches[3])"
