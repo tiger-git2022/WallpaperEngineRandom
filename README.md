@@ -82,12 +82,9 @@ dotnet build windows\WERandom.csproj -c Release
 
 ## 发布流程
 
-推送形如 `vX.Y.Z` 的 tag 后，GitHub Actions 会自动编译，并把打包好的 zip 发布到 Releases：
+在 [CHANGELOG.md](CHANGELOG.md) 顶部加一节 `## [X.Y.Z] - 日期`，合并（或推送）到 `main`。GitHub Actions 发现这个版本号还没有 `vX.Y.Z` 标签，就会自动编译，把打包好的 zip 发布到 Releases 并打上标签。最上面一节写成 `- 未发布` 时只编译、不发布。
 
-```powershell
-git tag v1.0.0
-git push origin v1.0.0
-```
+也可以自己推送形如 `vX.Y.Z` 的 tag 来发布。
 
 更新记录见 [CHANGELOG.md](CHANGELOG.md)。
 
