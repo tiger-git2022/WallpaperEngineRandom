@@ -193,6 +193,7 @@ public class TrayApp : ApplicationContext
 			trayApp.Tick();
 		};
 		_timer.Start();
+		InitUpdateCheck();
 		_sync = new Control();
 		_sync.CreateControl();
 		_portrait = new PortraitService(_engine);
@@ -654,6 +655,14 @@ public class TrayApp : ApplicationContext
 			entries.Add(new TrayMenu.Entry { Text = "立即分析新壁纸", Icon = Wpf.Ui.Controls.SymbolRegular.Search24, Click = () => _portrait.AnalyseNow() });
 			entries.Add(new TrayMenu.Entry { Text = fps.Length > 0 ? (fps.Length > 40 ? fps.Substring(0, 40) + "…" : fps) : "30 帧转码：平板同步时自动进行", Enabled = false, Icon = Wpf.Ui.Controls.SymbolRegular.VideoClip24 });
 			entries.Add(new TrayMenu.Entry { Separator = true });
+			entries.Add(new TrayMenu.Entry
+			{
+				Text = _updateStatus ?? (_update != null ? "更新到 v" + _update.Version + "…" : "检查更新…"),
+				Bold = _update != null && _updateStatus == null,
+				Enabled = _updateStatus == null,
+				Icon = Wpf.Ui.Controls.SymbolRegular.ArrowSync24,
+				Click = () => _sync.BeginInvoke((Action)(async () => await CheckUpdates(manual: true))),
+			});
 			entries.Add(new TrayMenu.Entry { Text = "查看日志", Icon = Wpf.Ui.Controls.SymbolRegular.DocumentText24, Click = () => OpenFile(_engine.LogPath) });
 			entries.Add(new TrayMenu.Entry { Text = "打开程序文件夹", Icon = Wpf.Ui.Controls.SymbolRegular.Folder24, Click = () => OpenFile(_engine.Dir) });
 			entries.Add(new TrayMenu.Entry { Separator = true });
@@ -671,8 +680,114 @@ public class TrayApp : ApplicationContext
 		UpdateMenu();
 	}
 
+	// ---- 检查更新 ----
+
+	private UpdateInfo _update;        // 已发现的新版本
+	private string _updateStatus;      // 正在检查/下载时显示在托盘菜单里
+	private string _notifiedVersion;   // 已经弹过提示的版本，同一版本只提示一次
+	private System.Windows.Forms.Timer _updateTimer;
+
+	/// <summary>启动 30 秒后检查一次，之后每 12 小时检查一次；发现新版本时托盘弹出提示。</summary>
+	private void InitUpdateCheck()
+	{
+		_tray.BalloonTipClicked += async delegate
+		{
+			if (_update != null)
+			{
+				await CheckUpdates(manual: true);
+			}
+		};
+		_updateTimer = new System.Windows.Forms.Timer { Interval = 30000 };
+		_updateTimer.Tick += async delegate
+		{
+			_updateTimer.Interval = 12 * 60 * 60 * 1000;
+			await CheckUpdates(manual: false);
+		};
+		_updateTimer.Start();
+	}
+
+	/// <summary>manual=true：用户点了菜单，结果都要告诉用户，有新版本就问要不要更新；false：后台检查，只在发现新版本时弹一次提示。</summary>
+	private async System.Threading.Tasks.Task CheckUpdates(bool manual)
+	{
+		if (_updateStatus != null)
+		{
+			return;
+		}
+		// 后台也每次都重新查：期间又出了更新的版本时能提示最新的那个
+		{
+			_updateStatus = "正在检查更新…";
+			try
+			{
+				_update = await Updater.CheckAsync();
+			}
+			catch (Exception ex)
+			{
+				_updateStatus = null;
+				_engine.Log.Log("检查更新失败：" + ex.Message);
+				if (manual)
+				{
+					MessageBox.Show("检查更新失败：" + ex.Message, AppName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+				}
+				return;
+			}
+			_updateStatus = null;
+		}
+		if (_update == null)
+		{
+			if (manual)
+			{
+				MessageBox.Show("已经是最新版本：v" + Updater.CurrentVersion, AppName, MessageBoxButtons.OK, MessageBoxIcon.Asterisk);
+			}
+			return;
+		}
+		if (!manual)
+		{
+			if (_notifiedVersion != _update.Version)
+			{
+				_notifiedVersion = _update.Version;
+				_engine.Log.Log("发现新版本 v" + _update.Version);
+				_tray.ShowBalloonTip(8000, AppName + "有新版本 v" + _update.Version, "点这里更新，或者右键托盘图标选“更新到 v" + _update.Version + "”。", ToolTipIcon.Info);
+			}
+			return;
+		}
+		UpdateInfo update = _update;
+		string notes = update.Notes.Length > 1200 ? update.Notes.Substring(0, 1200) + "…" : update.Notes;
+		if (MessageBox.Show("发现新版本 v" + update.Version + "（当前 v" + Updater.CurrentVersion + "）。\n\n" + notes + "\n\n现在下载并更新吗？更新完会自动重新打开。", AppName, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+		{
+			return;
+		}
+		if (!Updater.CanWriteAppDir())
+		{
+			if (MessageBox.Show("程序所在的文件夹不能写入（可能放在了 Program Files 里），没法自动更新。要打开下载页面手动更新吗？", AppName, MessageBoxButtons.YesNo, MessageBoxIcon.Exclamation) == DialogResult.Yes)
+			{
+				OpenFile(update.PageUrl);
+			}
+			return;
+		}
+		_updateStatus = "正在下载更新… 0%";
+		try
+		{
+			var progress = new Progress<int>(p => _updateStatus = "正在下载更新… " + p + "%");
+			string zip = await Updater.DownloadAsync(update, progress);
+			Updater.StartInstall(zip);
+			_engine.Log.Log("开始更新到 v" + update.Version);
+		}
+		catch (Exception ex)
+		{
+			_updateStatus = null;
+			_engine.Log.Log("更新失败：" + ex);
+			if (MessageBox.Show("更新失败：" + ex.Message + "\n\n要打开下载页面手动更新吗？", AppName, MessageBoxButtons.YesNo, MessageBoxIcon.Exclamation) == DialogResult.Yes)
+			{
+				OpenFile(update.PageUrl);
+			}
+			return;
+		}
+		ExitApp();
+	}
+
 	private void ExitApp()
 	{
+		_updateTimer?.Stop();
 		_engine.Log.Log("程序退出");
 		_timer.Stop();
 		SystemEvents.SessionSwitch -= OnSessionSwitch;
