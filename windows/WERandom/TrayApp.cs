@@ -713,7 +713,7 @@ public class TrayApp : ApplicationContext
 		{
 			return;
 		}
-		if (_update == null || manual)
+		// 后台也每次都重新查：期间又出了更新的版本时能提示最新的那个
 		{
 			_updateStatus = "正在检查更新…";
 			try
