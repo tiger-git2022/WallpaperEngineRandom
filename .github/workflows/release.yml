@@ -75,13 +75,42 @@ jobs:
           New-Item -ItemType Directory -Force dist | Out-Null
           Get-ChildItem out -Recurse -Include *.pdb | Remove-Item -Force
           Copy-Item README.md, LICENSE, CHANGELOG.md out/
-          Compress-Archive -Path out/* -DestinationPath "dist/WallpaperEngineRandom-v$env:VERSION-win-x64.zip"
+          $zip = "dist/WallpaperEngineRandom-v$env:VERSION-win-x64.zip"
+          Compress-Archive -Path out/* -DestinationPath $zip
+          # update.json：程序从 releases/latest/download/update.json 读新版本，格式和 GitHub 接口的发布信息一样，
+          # 这样不占接口每个 IP 每小时 60 次的额度。说明取 CHANGELOG.md 里本版本那一节。
+          $lines = Get-Content CHANGELOG.md -Encoding utf8
+          $start = -1
+          for ($i = 0; $i -lt $lines.Count; $i++) { if ($lines[$i].StartsWith("## [$env:VERSION]")) { $start = $i; break } }
+          $notes = "见 CHANGELOG.md"
+          if ($start -ge 0) {
+            $body = @()
+            for ($i = $start + 1; $i -lt $lines.Count -and $lines[$i] -notmatch '^## '; $i++) { $body += $lines[$i] }
+            $notes = ($body -join "`n").Trim()
+          }
+          $tag = "v$env:VERSION"
+          $name = Split-Path $zip -Leaf
+          $base = "https://github.com/${{ github.repository }}/releases"
+          [ordered]@{
+            tag_name = $tag
+            html_url = "$base/tag/$tag"
+            body = $notes
+            assets = @([ordered]@{
+              name = $name
+              size = (Get-Item $zip).Length
+              digest = "sha256:" + (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+              browser_download_url = "$base/download/$tag/$name"
+            })
+          } | ConvertTo-Json -Depth 4 | Set-Content dist/update.json -Encoding utf8NoBOM
+          Get-Content dist/update.json
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: WallpaperEngineRandom-win-x64
-          path: dist/*.zip
+          path: |
+            dist/*.zip
+            dist/update.json
 
       - name: Release
         if: startsWith(github.ref, 'refs/tags/v') || env.PUBLISH == 'true'
@@ -89,5 +118,7 @@ jobs:
         with:
           tag_name: v${{ env.VERSION }}
           target_commitish: ${{ github.sha }}
-          files: dist/*.zip
+          files: |
+            dist/*.zip
+            dist/update.json
           generate_release_notes: true

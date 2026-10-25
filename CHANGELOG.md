@@ -2,6 +2,11 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.0.3] - 2026-10-26
+
+### 修复
+- 检查更新报「403 (rate limit exceeded)」：GitHub 接口对没登录的访问每个 IP 每小时只给 60 次，同一网络、同一代理出口的设备共用，容易用完。现在先读发版时附带的 update.json（普通下载地址，没有这个限制），读不到才用接口。
+
 ## [1.0.2] - 2026-10-23
 
 ### 新增
