@@ -58,6 +58,21 @@
             <!-- navigation -->
             <DockPanel Grid.Column="0" Margin="10,4,6,12">
                 <TextBlock x:Name="SideStatus" DockPanel.Dock="Top" Style="{StaticResource Muted}" Margin="8,2,0,14"/>
+                <!-- now playing: small thumbnails, visible on every page; click → overview -->
+                <Button x:Name="SideNow" DockPanel.Dock="Bottom" Margin="4,8,4,0" Padding="0" Cursor="Hand" Click="SideNow_Click"
+                        Background="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch" Visibility="Collapsed">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <ContentPresenter/>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <StackPanel>
+                        <TextBlock Text="正在播放" Style="{StaticResource Muted}" FontSize="12" Margin="4,0,0,6"/>
+                        <UniformGrid x:Name="SideThumbs" Rows="1"/>
+                        <TextBlock x:Name="SideTitle" FontSize="12" Margin="4,6,0,0" TextTrimming="CharacterEllipsis"
+                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
+                    </StackPanel>
+                </Button>
                 <StackPanel x:Name="Nav">
                     <ui:Button x:Name="NavHome" Style="{StaticResource NavButton}" Tag="0" Click="Nav_Click">
                         <StackPanel Orientation="Horizontal"><ui:SymbolIcon Symbol="Home24" Margin="0,0,12,0"/><TextBlock Text="概览"/></StackPanel>
@@ -92,15 +107,18 @@
                         <!-- 0 概览 -->
                         <ScrollViewer x:Name="PageHome" Padding="24,16">
                             <StackPanel>
-                                <ui:CardControl Icon="{ui:SymbolIcon Image24}">
-                                    <ui:CardControl.Header>
-                                        <StackPanel>
-                                            <TextBlock Text="当前壁纸" FontWeight="SemiBold"/>
-                                            <TextBlock x:Name="HomeCurrent" Style="{StaticResource Muted}" Margin="0,4,0,0"/>
-                                        </StackPanel>
-                                    </ui:CardControl.Header>
-                                    <ui:Button Content="立即切换一张" Appearance="Primary" Icon="{ui:SymbolIcon ArrowNext24}" Click="SwitchNow_Click"/>
-                                </ui:CardControl>
+                                <ui:Card Margin="0,0,0,4" Padding="16,14">
+                                    <StackPanel>
+                                        <DockPanel Margin="0,0,0,12">
+                                            <ui:Button DockPanel.Dock="Right" Content="立即切换一张" Appearance="Primary" Icon="{ui:SymbolIcon ArrowNext24}" Click="SwitchNow_Click"/>
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock Text="正在播放" FontWeight="SemiBold"/>
+                                                <TextBlock x:Name="HomeCurrent" Style="{StaticResource Muted}" Margin="0,4,0,0"/>
+                                            </StackPanel>
+                                        </DockPanel>
+                                        <WrapPanel x:Name="NowPanel"/>
+                                    </StackPanel>
+                                </ui:Card>
                                 <ui:CardControl Icon="{ui:SymbolIcon Timer24}">
                                     <ui:CardControl.Header>
                                         <StackPanel>

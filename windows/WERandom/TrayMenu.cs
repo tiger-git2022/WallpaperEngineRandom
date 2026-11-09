@@ -31,6 +31,9 @@ public sealed class TrayMenu
 		public Action Click;
 
 		public bool Separator;
+
+		/// <summary>可选：显示在文字上方的图片（当前壁纸的预览图）。</summary>
+		public ImageSource Image;
 	}
 
 	[StructLayout(LayoutKind.Sequential)]
@@ -258,12 +261,36 @@ public sealed class TrayMenu
 		string foreground = e.Enabled ? "TextFillColorPrimaryBrush" : "TextFillColorTertiaryBrush";
 		text.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty, foreground);
 		icon.SetResourceReference(Control.ForegroundProperty, foreground);
-		var content = new StackPanel { Orientation = Orientation.Horizontal };
+		var line = new StackPanel { Orientation = Orientation.Horizontal };
 		if (e.Icon != SymbolRegular.Empty)
 		{
-			content.Children.Add(icon);
+			line.Children.Add(icon);
 		}
-		content.Children.Add(text);
+		line.Children.Add(text);
+		UIElement content = line;
+		if (e.Image != null)
+		{
+			// 带预览图的一行：上面是圆角缩略图，下面是标题（最多两行）
+			var img = new System.Windows.Controls.Image
+			{
+				Source = e.Image,
+				Width = 256,
+				Height = 144,
+				Stretch = Stretch.UniformToFill,
+				HorizontalAlignment = HorizontalAlignment.Left,
+				Clip = new RectangleGeometry(new System.Windows.Rect(0, 0, 256, 144), 4, 4),
+			};
+			RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.HighQuality);
+			text.MaxWidth = 256;
+			text.TextWrapping = TextWrapping.Wrap;
+			text.MaxHeight = 40;
+			text.Margin = new Thickness(0, 6, 0, 2);
+			var stack = new StackPanel { Margin = new Thickness(0, 2, 0, 2) };
+			stack.Children.Add(img);
+			line.Children.Remove(text);
+			stack.Children.Add(text);
+			content = stack;
+		}
 		// 用真正的按钮（改成菜单项的样子），这样命令能获得焦点、回车 / 空格执行，读屏软件也能读出名字
 		var row = new System.Windows.Controls.Button
 		{

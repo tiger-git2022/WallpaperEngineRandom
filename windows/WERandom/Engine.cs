@@ -530,6 +530,28 @@ public class Engine
 		return d.ToString("0.##", CultureInfo.InvariantCulture);
 	}
 
+	private string _weExe;
+
+	private DateTime _weExeTime = DateTime.MinValue;
+
+	/// <summary>What WE shows right now on each monitor (from WE's config.json, so hand-picked wallpapers count too).</summary>
+	public List<CurrentWallpaper.Item> CurrentWallpapers()
+	{
+		if (_weExe == null || (DateTime.UtcNow - _weExeTime).TotalMinutes > 1.0)
+		{
+			try
+			{
+				_weExe = ResolvePaths().Exe;
+			}
+			catch
+			{
+				_weExe = "";
+			}
+			_weExeTime = DateTime.UtcNow;
+		}
+		return CurrentWallpaper.Read(_weExe);
+	}
+
 	/// <summary>Title of the last wallpaper put on (history), for the main window after a restart.</summary>
 	public string LastPlayedTitle()
 	{

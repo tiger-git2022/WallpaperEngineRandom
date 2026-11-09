@@ -260,7 +260,7 @@ public partial class MainWindow : FluentWindow
 	{
 		Config cfg = _engine.Cfg;
 		SideStatus.Text = cfg.Paused ? "已暂停" : ("运行中 · 每 " + cfg.IntervalMinutes + " 分钟");
-		HomeCurrent.Text = string.IsNullOrEmpty(_engine.LastTitle) ? "还没有切换过" : _engine.LastTitle;
+		RefreshNow();
 		HomeStatus.Text = cfg.Paused ? "已暂停自动切换" : (_app.StatusText.Length > 0 ? _app.StatusText : ("每 " + cfg.IntervalMinutes + " 分钟切换一次"));
 		PauseButton.Content = cfg.Paused ? "继续" : "暂停";
 		Engine.QueueState q = _engine.ReadQueue();
@@ -309,6 +309,174 @@ public partial class MainWindow : FluentWindow
 		catch
 		{
 		}
+	}
+
+	// ---- now playing (thumbnails) ----
+
+	private string _nowSig;
+
+	private bool _nowBusy;
+
+	private sealed class NowEntry
+	{
+		public CurrentWallpaper.Item Item;
+
+		public System.Windows.Media.Imaging.BitmapSource Image;
+	}
+
+	/// <summary>Reads WE's current wallpapers on a worker thread; redraws only when they changed.</summary>
+	private void RefreshNow(bool force = false)
+	{
+		if (_nowBusy)
+		{
+			return;
+		}
+		_nowBusy = true;
+		ThreadPool.QueueUserWorkItem(delegate
+		{
+			List<NowEntry> entries = null;
+			string sig = null;
+			try
+			{
+				List<CurrentWallpaper.Item> items = _engine.CurrentWallpapers();
+				sig = string.Join("|", items.Select(i => i.MonitorKey + "=" + i.Folder + "/" + i.Title));
+				if (force || sig != _nowSig)
+				{
+					entries = items.Select(i => new NowEntry { Item = i, Image = LoadThumb(i.PreviewPath, 600) }).ToList();
+				}
+			}
+			catch
+			{
+			}
+			Dispatcher.BeginInvoke((Action)delegate
+			{
+				_nowBusy = false;
+				if (entries != null)
+				{
+					_nowSig = sig;
+					ShowNow(entries);
+				}
+			});
+		});
+	}
+
+	/// <summary>Small decoded copy of a preview image (first frame for GIFs); null when missing or unreadable.</summary>
+	internal static System.Windows.Media.Imaging.BitmapSource LoadThumb(string path, int width)
+	{
+		if (string.IsNullOrEmpty(path) || !System.IO.File.Exists(path))
+		{
+			return null;
+		}
+		try
+		{
+			using var fs = new System.IO.FileStream(path, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.ReadWrite | System.IO.FileShare.Delete);
+			var bi = new System.Windows.Media.Imaging.BitmapImage();
+			bi.BeginInit();
+			bi.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+			bi.CreateOptions = System.Windows.Media.Imaging.BitmapCreateOptions.IgnoreColorProfile;
+			bi.DecodePixelWidth = width;
+			bi.StreamSource = fs;
+			bi.EndInit();
+			bi.Freeze();
+			return bi;
+		}
+		catch
+		{
+			return null;
+		}
+	}
+
+	/// <summary>Rounded image (or a placeholder icon) that fills its slot.</summary>
+	private static FrameworkElement Thumb(System.Windows.Media.Imaging.BitmapSource img, double width, double height, double radius)
+	{
+		var border = new Border
+		{
+			Width = width,
+			Height = height,
+			CornerRadius = new CornerRadius(radius),
+			Background = (System.Windows.Media.Brush)Application.Current.TryFindResource("ControlFillColorSecondaryBrush")
+		};
+		if (img == null)
+		{
+			border.Child = new SymbolIcon { Symbol = SymbolRegular.ImageOff24, FontSize = 28, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+			return border;
+		}
+		var image = new System.Windows.Controls.Image { Source = img, Stretch = System.Windows.Media.Stretch.UniformToFill };
+		System.Windows.Media.RenderOptions.SetBitmapScalingMode(image, System.Windows.Media.BitmapScalingMode.HighQuality);
+		border.Child = image;
+		border.SizeChanged += delegate
+		{
+			border.Clip = new System.Windows.Media.RectangleGeometry(new Rect(0, 0, border.ActualWidth, border.ActualHeight), radius, radius);
+		};
+		return border;
+	}
+
+	private void ShowNow(List<NowEntry> entries)
+	{
+		NowPanel.Children.Clear();
+		SideThumbs.Children.Clear();
+		if (entries.Count == 0)
+		{
+			HomeCurrent.Text = string.IsNullOrEmpty(_engine.LastTitle) ? "读不到 Wallpaper Engine 的当前壁纸" : ("上次切换：" + _engine.LastTitle);
+			SideNow.Visibility = Visibility.Collapsed;
+			return;
+		}
+		HomeCurrent.Text = entries.Count > 1 ? (entries.Count + " 台显示器，包括在 Wallpaper Engine 里手动换的") : "包括在 Wallpaper Engine 里手动换的";
+		foreach (NowEntry e in entries)
+		{
+			CurrentWallpaper.Item it = e.Item;
+			var card = new StackPanel { Width = 300, Margin = new Thickness(0, 0, 16, 8) };
+			FrameworkElement thumb = Thumb(e.Image, 300, 169, 6);
+			thumb.Cursor = System.Windows.Input.Cursors.Hand;
+			thumb.ToolTip = "打开壁纸文件夹";
+			string folder = it.Folder;
+			thumb.MouseLeftButtonUp += delegate { Open(folder); };
+			card.Children.Add(thumb);
+			card.Children.Add(new System.Windows.Controls.TextBlock
+			{
+				Text = it.Title,
+				FontWeight = FontWeights.SemiBold,
+				TextWrapping = TextWrapping.Wrap,
+				MaxHeight = 40,
+				TextTrimming = TextTrimming.CharacterEllipsis,
+				Margin = new Thickness(2, 8, 0, 0),
+				ToolTip = it.Title
+			});
+			card.Children.Add(new System.Windows.Controls.TextBlock
+			{
+				Text = it.Monitor + " · " + it.Id,
+				Style = (Style)FindResource("Muted"),
+				FontSize = 12,
+				Margin = new Thickness(2, 2, 0, 6)
+			});
+			var buttons = new StackPanel { Orientation = Orientation.Horizontal };
+			var bFolder = new Wpf.Ui.Controls.Button { Content = "文件夹", Icon = new SymbolIcon { Symbol = SymbolRegular.Folder24 }, Margin = new Thickness(0, 0, 8, 0), Padding = new Thickness(10, 4, 10, 4) };
+			bFolder.Click += delegate { Open(folder); };
+			buttons.Children.Add(bFolder);
+			if (it.IsWorkshop)
+			{
+				string id = it.Id;
+				var bShop = new Wpf.Ui.Controls.Button { Content = "创意工坊页面", Icon = new SymbolIcon { Symbol = SymbolRegular.Globe24 }, Padding = new Thickness(10, 4, 10, 4) };
+				bShop.Click += delegate { Open("steam://url/CommunityFilePage/" + id); };
+				buttons.Children.Add(bShop);
+			}
+			card.Children.Add(buttons);
+			NowPanel.Children.Add(card);
+
+			FrameworkElement small = Thumb(e.Image, double.NaN, entries.Count == 1 ? 110 : 56, 4);
+			small.Margin = new Thickness(2, 0, 2, 0);
+			small.ToolTip = it.Monitor + "：" + it.Title;
+			SideThumbs.Children.Add(small);
+		}
+		SideThumbs.Columns = entries.Count;
+		SideTitle.Text = string.Join(" | ", entries.Select(x => x.Item.Title));
+		SideTitle.ToolTip = string.Join("\n", entries.Select(x => x.Item.Monitor + "：" + x.Item.Title));
+		SideNow.Visibility = Visibility.Visible;
+	}
+
+	private void SideNow_Click(object sender, RoutedEventArgs e)
+	{
+		SelectPage(0);
 	}
 
 	// ---- devices ----
