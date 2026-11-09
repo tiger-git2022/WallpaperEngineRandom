@@ -6,6 +6,8 @@
     <UseWindowsForms>True</UseWindowsForms>
     <UseWPF>true</UseWPF>
     <TargetFramework>net48</TargetFramework>
+    <!-- WebView2 needs the loader DLL that matches the process; the app ships as win-x64 -->
+    <PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
   <PropertyGroup>
     <LangVersion>11.0</LangVersion>
@@ -17,6 +19,7 @@
   <ItemGroup>
     <Resource Include="WERandom\icon.png" />
     <EmbeddedResource Include="app.ico" LogicalName="WERandom.app.ico" />
+    <EmbeddedResource Include="WERandom\Web\workshop.html" LogicalName="WERandom.workshop.html" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="System.Core" />
@@ -28,6 +31,8 @@
     <Reference Include="System.Web.Extensions" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
     <PackageReference Include="WPF-UI" Version="4.3.0" />
+    <PackageReference Include="XamlAnimatedGif" Version="2.3.2" />
   </ItemGroup>
 </Project>

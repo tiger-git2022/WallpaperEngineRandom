@@ -1,0 +1,903 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>创意工坊</title>
+<style>
+/* Colours follow WPF-UI (Fluent) so the page looks like the app's other pages; the page itself is transparent and the
+   window's Mica / Acrylic background shows through. */
+:root {
+  --accent: #60cdff;
+  --card: rgba(255,255,255,.051); --card2: rgba(255,255,255,.03); --hover: rgba(255,255,255,.084); --press: rgba(255,255,255,.033);
+  --line: rgba(255,255,255,.083); --ctl: rgba(255,255,255,.061); --ctlhover: rgba(255,255,255,.084); --ctlline: rgba(255,255,255,.093);
+  --fg: #ffffff; --fg2: rgba(255,255,255,.786); --fg3: rgba(255,255,255,.545); --chip: rgba(255,255,255,.07);
+  --solid: #2c2c2c; --shadow: rgba(0,0,0,.4); --thumb: rgba(0,0,0,.3);
+  --new: #ff8c42; --ok: #6ccb5f; --warn: #fce100; --danger: #ff99a4;
+}
+:root.light {
+  --card: rgba(255,255,255,.7); --card2: rgba(255,255,255,.5); --hover: rgba(0,0,0,.037); --press: rgba(0,0,0,.024);
+  --line: rgba(0,0,0,.058); --ctl: rgba(255,255,255,.7); --ctlhover: rgba(249,249,249,.5); --ctlline: rgba(0,0,0,.073);
+  --fg: rgba(0,0,0,.896); --fg2: rgba(0,0,0,.606); --fg3: rgba(0,0,0,.446); --chip: rgba(0,0,0,.045);
+  --solid: #f9f9f9; --shadow: rgba(0,0,0,.14); --thumb: rgba(0,0,0,.08);
+  --new: #d9600b; --ok: #0f7b0f; --warn: #9d5d00; --danger: #c42b1c;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: transparent; }
+body { color: var(--fg); font: 14px/1.45 "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", sans-serif; overflow: hidden; user-select: none; }
+button { font: inherit; color: var(--fg); cursor: pointer; border: 1px solid var(--ctlline); background: var(--ctl); border-radius: 4px; padding: 5px 12px; }
+button:hover { background: var(--ctlhover); }
+button:active { background: var(--press); color: var(--fg2); }
+button.primary { background: var(--accent); border-color: transparent; color: #000; }
+:root.light button.primary { color: #fff; }
+button.primary:hover { filter: brightness(.94); }
+button.ghost { background: transparent; border-color: transparent; }
+button.ghost:hover { background: var(--hover); }
+button:disabled { opacity: .45; cursor: default; }
+input[type=search], select { font: inherit; color: var(--fg); background: var(--ctl); border: 1px solid var(--ctlline); border-bottom-color: var(--fg3); border-radius: 4px; padding: 5px 10px; outline: none; }
+input[type=search]:focus, select:focus { border-bottom: 2px solid var(--accent); padding-bottom: 4px; background: var(--card2); }
+select option { background: var(--solid); color: var(--fg); }
+a { color: var(--accent); cursor: pointer; text-decoration: none; }
+a:hover { text-decoration: underline; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--fg3); border-radius: 4px; border: 2px solid transparent; background-clip: padding-box; opacity: .6; }
+
+#app { display: grid; grid-template-rows: auto 1fr; height: 100vh; }
+#top { display: flex; align-items: center; gap: 8px; padding: 12px 18px 10px; }
+.tabs { display: flex; gap: 4px; }
+.tab { border: 0; background: transparent; padding: 6px 12px; border-radius: 4px; color: var(--fg2); position: relative; }
+.tab:hover { background: var(--hover); }
+.tab.on { background: var(--hover); color: var(--fg); font-weight: 600; }
+.tab.on::after { content: ""; position: absolute; left: 50%; bottom: 1px; width: 16px; height: 3px; margin-left: -8px; border-radius: 2px; background: var(--accent); }
+.tab .count { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 6px; border-radius: 9px; background: var(--new); color: #fff; font-size: 11px; line-height: 18px; text-align: center; font-weight: 600; }
+.tab .count[hidden] { display: none; }
+.tab, #top button, .bar button, .bar label { white-space: nowrap; flex-shrink: 0; }
+#search { flex: 1 1 auto; width: 0; min-width: 110px; max-width: 420px; margin-left: 8px; }
+#sort { min-width: 130px; }
+#me { display: flex; align-items: center; gap: 8px; margin-left: auto; color: var(--fg2); white-space: nowrap; }
+#me img { width: 26px; height: 26px; border-radius: 50%; }
+
+#body { display: grid; grid-template-columns: 200px minmax(0, 1fr) 380px; min-height: 0; }
+#body.nofilters { grid-template-columns: 0 minmax(0, 1fr) 380px; }
+#filters { overflow: auto; padding: 4px 14px 20px 18px; }
+#body.nofilters #filters { display: none; }
+#filters h4 { margin: 14px 0 6px; font-size: 12px; color: var(--fg3); font-weight: 600; }
+#filters label { display: flex; align-items: center; gap: 7px; padding: 2px 0; color: var(--fg2); cursor: pointer; }
+#filters label:hover { color: var(--fg); }
+#filters input { accent-color: var(--accent); margin: 0; }
+#filters .reset { margin-top: 14px; width: 100%; }
+#main { overflow: auto; padding: 4px 16px 30px; position: relative; }
+#detail { overflow: auto; margin: 0 12px 12px 0; border: 1px solid var(--line); border-radius: 8px; background: var(--card2); }
+
+.bar { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; color: var(--fg2); flex-wrap: wrap; }
+.bar .grow { flex: 1; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 14px 12px; }
+.tile { cursor: pointer; border-radius: 7px; padding: 5px; margin: -5px; }
+.tile:hover { background: var(--hover); }
+.tile.sel { background: var(--hover); outline: 2px solid var(--accent); }
+.thumb { position: relative; aspect-ratio: 1 / 1; border-radius: 4px; overflow: hidden; background: var(--thumb); }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.badges { position: absolute; left: 6px; top: 6px; display: flex; gap: 4px; }
+.badge { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 4px; background: rgba(0,0,0,.72); color: #fff; }
+.badge.new { background: var(--new); }
+.badge.Questionable { color: #ffd166; }
+.badge.Mature { color: #ff7b7b; }
+.badge.sub { position: absolute; right: 6px; bottom: 6px; background: rgba(16,124,16,.9); }
+.badge.dl { position: absolute; right: 6px; bottom: 6px; background: rgba(0,0,0,.72); color: var(--warn); }
+.badge.type { position: absolute; right: 6px; top: 6px; font-weight: 600; }
+.tile .t { margin-top: 6px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile .s { color: var(--fg3); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile.seen .t { color: var(--fg2); font-weight: 500; }
+/* timeline: a Weibo-style feed of posts; uploads in a row by one author become one post with a picture grid */
+.feed { max-width: 720px; margin: 0 auto; }
+/* the timeline and the author list have no side panel: everything is inside the posts */
+#body.nodetail { grid-template-columns: 200px minmax(0, 1fr) 0; }
+#body.nodetail.nofilters { grid-template-columns: 0 minmax(0, 1fr) 0; }
+#body.nodetail #detail { display: none; }
+/* the only picture of a post: whole picture in its own proportions, centred (no square crop) */
+.pics.n1 { grid-template-columns: 1fr; }
+.pics .tile[data-mode=big] .thumb { aspect-ratio: auto; display: flex; align-items: center; justify-content: center; min-height: 180px; border-radius: 6px; }
+.pics .tile[data-mode=big] .thumb img { width: 100%; height: auto; max-height: min(440px, 60vh); object-fit: contain; cursor: zoom-in; }
+.pics .tile[data-mode=big]:hover { background: transparent; }
+.post .strip { margin-top: 8px; }
+.post .chips { margin: 10px 0 4px; }
+.post .meta { color: var(--fg3); font-size: 12px; }
+.post .txt p.full { -webkit-line-clamp: unset; display: block; max-height: 360px; overflow: auto; user-select: text; }
+.post .txt a[data-more] { font-size: 12px; }
+.post .inline { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.post .inline:empty { display: none; }
+.pf button.primary { padding: 4px 14px; }
+.pf a[data-unsub] { color: var(--fg3); font-size: 12px; }
+#lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.86); display: none; align-items: center; justify-content: center; z-index: 20; cursor: zoom-out; }
+#lightbox.on { display: flex; }
+#lightbox img { max-width: 96vw; max-height: 94vh; object-fit: contain; }
+.post { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; margin-bottom: 8px; }
+.post.read { opacity: .82; }
+.ph { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.ph .av { width: 40px; height: 40px; border-radius: 50%; background: var(--chip); cursor: pointer; }
+.ph .grow { flex: 1; min-width: 0; }
+.ph .n { font-weight: 600; font-size: 14px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ph .n:hover { color: var(--accent); }
+.ph .s { color: var(--fg3); font-size: 12px; }
+.post .txt { margin: 0 0 10px; }
+.post .txt b { font-size: 14px; }
+.post .txt p { margin: 4px 0 0; color: var(--fg2); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; }
+.pics { display: grid; gap: 6px; grid-template-columns: minmax(0, 380px); }
+.pics.multi { grid-template-columns: repeat(3, 1fr); }
+.pics.multi.n2 { grid-template-columns: repeat(2, minmax(0, 220px)); }
+.pics .tile .t { font-size: 12px; font-weight: 500; margin: 4px 2px 0; }
+.pics .tile { margin: 0; padding: 0; border-radius: 6px; }
+.pics .tile.sel { outline-offset: 2px; }
+.pics .tile[data-mode=big] .qs { display: none; }
+.pf { display: flex; align-items: center; gap: 18px; margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--line); font-size: 13px; }
+.pf a { color: var(--fg2); }
+.pf a:hover { color: var(--accent); text-decoration: none; }
+.pf a[data-sub] { color: var(--accent); font-weight: 600; }
+.pf .done { color: var(--ok); }
+.pf .wait { color: var(--warn); }
+.feed .divider { margin: 4px 0 14px; }
+.qs { position: absolute; right: 6px; bottom: 6px; padding: 2px 9px; font-size: 12px; display: none; background: var(--accent); border-color: var(--accent); color: #000; font-weight: 600; }
+.tile:hover .qs { display: block; }
+.divider { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; color: var(--fg3); font-size: 12px; margin: 6px 0; }
+.divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.divider b { color: var(--fg2); font-weight: 600; }
+.more { grid-column: 1 / -1; text-align: center; color: var(--fg3); padding: 18px 0; }
+.empty { text-align: center; color: var(--fg3); padding: 70px 20px; line-height: 1.8; }
+.empty h3 { color: var(--fg); font-size: 18px; margin: 0 0 6px; }
+.empty button { margin-top: 14px; }
+.warnbox { border: 1px solid var(--warn); color: var(--warn); border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; }
+
+.authorhead { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
+.authorhead img { width: 64px; height: 64px; border-radius: 6px; background: var(--card); }
+.authorhead h2 { margin: 0; font-size: 20px; }
+.authorhead .s { color: var(--fg3); }
+.people { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+.person { display: flex; align-items: center; gap: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px; cursor: pointer; }
+.person:hover { background: var(--hover); }
+.person img { width: 44px; height: 44px; border-radius: 5px; background: var(--chip); }
+.person .n { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.person .s { color: var(--fg3); font-size: 12px; }
+
+#detail .none { color: var(--fg3); text-align: center; padding: 80px 24px; }
+.dv { padding: 14px; }
+.dv .big { width: 100%; height: 340px; object-fit: contain; background: var(--thumb); border-radius: 6px; display: block; }
+.strip { display: flex; gap: 6px; margin-top: 8px; overflow-x: auto; padding-bottom: 4px; }
+.strip img { height: 52px; aspect-ratio: 1 / 1; object-fit: cover; border-radius: 4px; cursor: pointer; opacity: .75; border: 2px solid transparent; }
+.strip img.on, .strip img:hover { opacity: 1; border-color: var(--accent); }
+.dv h2 { font-size: 17px; margin: 12px 0 8px; user-select: text; word-break: break-word; }
+.who { display: flex; align-items: center; gap: 9px; margin-bottom: 10px; }
+.who img { width: 32px; height: 32px; border-radius: 50%; background: var(--chip); }
+.who .n { font-weight: 600; }
+.who .grow { flex: 1; min-width: 0; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+.actions .primary { flex: 1; min-width: 140px; padding: 7px 12px; }
+.stats { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; color: var(--fg2); margin: 10px 0; }
+.stats span:nth-child(odd) { color: var(--fg3); }
+.chips { display: flex; flex-wrap: wrap; gap: 5px; margin: 10px 0; }
+.chip { background: var(--chip); border-radius: 12px; padding: 2px 9px; font-size: 12px; color: var(--fg2); cursor: pointer; }
+.chip:hover { color: var(--fg); outline: 1px solid var(--accent); }
+.desc { white-space: pre-wrap; color: var(--fg2); user-select: text; word-break: break-word; border-top: 1px solid var(--line); padding-top: 10px; margin-top: 6px; max-height: 420px; overflow: auto; }
+.status { font-size: 12px; margin-top: 4px; }
+.status.ok { color: var(--ok); } .status.wait { color: var(--warn); } .status.err { color: var(--danger); }
+#toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); background: var(--solid); border: 1px solid var(--line); border-radius: 8px; padding: 9px 16px; box-shadow: 0 8px 24px var(--shadow); display: none; z-index: 9; max-width: 70vw; }
+.spin { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: r .8s linear infinite; vertical-align: -2px; }
+@keyframes r { to { transform: rotate(360deg); } }
+/* narrow window (the main window's default size): filters float over the list when "筛选" is clicked */
+#body { position: relative; }
+@media (max-width: 1150px) {
+  #body, #body.nofilters { grid-template-columns: minmax(0, 1fr) 320px; }
+  #filters, #body.nofilters #filters { display: none; position: absolute; left: 0; top: 0; bottom: 0; width: 210px; z-index: 5; background: var(--solid); border-radius: 0 8px 8px 0; box-shadow: 6px 0 24px var(--shadow); }
+  #body.overlay #filters { display: block; }
+  #body.nodetail, #body.nodetail.nofilters { grid-template-columns: minmax(0, 1fr) 0; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="top">
+    <div class="tabs">
+      <button class="tab" data-tab="timeline">时间线<span class="count" id="unread" hidden></span></button>
+      <button class="tab" data-tab="browse">浏览工坊</button>
+      <button class="tab" data-tab="following">关注的作者</button>
+    </div>
+    <input id="search" type="search" placeholder="搜索壁纸，回车搜索">
+    <select id="sort" title="排序"></select>
+    <button id="filterBtn" class="ghost" title="显示 / 隐藏筛选">筛选</button>
+    <div id="me"></div>
+  </div>
+  <div id="body">
+    <div id="filters"></div>
+    <div id="main"></div>
+    <div id="detail"><div class="none">点一张壁纸查看详情</div></div>
+  </div>
+</div>
+<div id="toast"></div>
+<div id="lightbox"><img alt=""></div>
+<script>
+'use strict';
+// ---------- bridge to the C# host ----------
+const host = (() => {
+  let seq = 0; const pending = new Map();
+  window.chrome.webview.addEventListener('message', e => {
+    const m = e.data;
+    if (m && m.id && pending.has(m.id)) {
+      const p = pending.get(m.id); pending.delete(m.id);
+      if (m.ok) p.res(m.result); else { const err = new Error(m.error || '出错了'); err.status = m.status; p.rej(err); }
+    } else if (m && m.event) onHostEvent(m);
+  });
+  return {
+    call(method, args) { return new Promise((res, rej) => { const id = String(++seq); pending.set(id, { res, rej }); window.chrome.webview.postMessage({ id, method, args: args || {} }); }); },
+    send(method, args) { window.chrome.webview.postMessage({ method, args: args || {} }); }
+  };
+})();
+
+window.addEventListener('error', e => host.send('log', { message: (e.message || '') + ' @' + (e.lineno || '?') }));
+window.addEventListener('unhandledrejection', e => host.send('log', { message: 'promise: ' + ((e.reason && e.reason.message) || e.reason) }));
+
+// ---------- helpers ----------
+const $ = (s, el) => (el || document).querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const h = (html) => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; };
+function toast(text, ms) { const t = $('#toast'); t.textContent = text; t.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => t.style.display = 'none', ms || 2600); }
+function ago(sec) {
+  if (!sec) return '';
+  const d = Date.now() / 1000 - sec;
+  if (d < 60) return '刚刚';
+  if (d < 3600) return Math.floor(d / 60) + ' 分钟前';
+  if (d < 86400) return Math.floor(d / 3600) + ' 小时前';
+  if (d < 86400 * 30) return Math.floor(d / 86400) + ' 天前';
+  return date(sec);
+}
+function date(sec) { const x = new Date(sec * 1000); return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); }
+function num(n) { n = +n || 0; return n >= 10000 ? (n / 10000).toFixed(n >= 100000 ? 0 : 1) + ' 万' : String(n); }
+function size(b) { b = +b || 0; return b >= 1 << 30 ? (b / (1 << 30)).toFixed(1) + ' GB' : b >= 1 << 20 ? (b / (1 << 20)).toFixed(0) + ' MB' : Math.ceil(b / 1024) + ' KB'; }
+// WE previews are mostly square; ask Steam's image CDN for a small copy (fits in 320×320, no letterbox)
+// only the width is given, so Steam scales the picture without changing its proportions
+const small = (url, px) => url ? url + (url.includes('?') ? '&' : '?') + `imw=${px || 320}&ima=fit` : '';
+function errText(e) { return e && e.status === 401 ? '需要重新登录 Steam' : (e && e.message) || String(e); }
+
+// ---------- tags (same groups as Wallpaper Engine) ----------
+const TYPE = [['Scene', '场景'], ['Video', '视频'], ['Web', '网页'], ['Application', '应用']];
+const AGE = [['Everyone', '全年龄'], ['Questionable', '轻度'], ['Mature', '成人']];
+const RES = [['1920 x 1080', '1920×1080'], ['2560 x 1440', '2560×1440'], ['3840 x 2160', '3840×2160'], ['3440 x 1440', '3440×1440 带鱼屏'], ['1080 x 1920', '1080×1920 竖屏'], ['2160 x 3840', '2160×3840 竖屏'], ['Dynamic resolution', '自适应分辨率']];
+const GENRE = [['Abstract', '抽象'], ['Animal', '动物'], ['Anime', '动漫'], ['Cartoon', '卡通'], ['CGI', 'CGI'], ['Cyberpunk', '赛博朋克'], ['Fantasy', '奇幻'], ['Game', '游戏'], ['Girls', '女孩'], ['Guys', '男孩'], ['Landscape', '风景'], ['Medieval', '中世纪'], ['Memes', '梗图'], ['MMD', 'MMD'], ['Music', '音乐'], ['Nature', '自然'], ['Pixel art', '像素'], ['Relaxing', '放松'], ['Retro', '复古'], ['Sci-Fi', '科幻'], ['Sports', '运动'], ['Technology', '科技'], ['Television', '影视'], ['Vehicle', '载具'], ['Unspecified', '未分类']];
+const GROUPS = [['type', '类型', TYPE], ['age', '年龄分级', AGE], ['res', '分辨率', RES], ['genre', '标签', GENRE]];
+const LABEL = Object.fromEntries([...TYPE, ...AGE, ...RES, ...GENRE, ['Wallpaper', '壁纸'], ['Preset', '预设'], ['Audio responsive', '音频响应'], ['Customizable', '可自定义'], ['Approved', '官方推荐']]);
+const typeOf = it => (TYPE.find(t => it.tags.includes(t[0])) || [])[0] || '';
+const ageOf = it => (AGE.find(t => it.tags.includes(t[0])) || [])[0] || '';
+const SORTS = [
+  ['trend7', '本周最热', { query_type: 3, days: 7 }], ['trend30', '本月最热', { query_type: 3, days: 30 }], ['trend365', '今年最热', { query_type: 3, days: 365 }],
+  ['new', '最新发布', { query_type: 1 }], ['updated', '最近更新', { query_type: 21 }], ['subs', '订阅最多', { query_type: 9 }], ['vote', '评分最高', { query_type: 0 }], ['text', '最相关', { query_type: 12 }]
+];
+
+// ---------- persistent state (saved by the host in we_random.workshop.json) ----------
+let S = { readUpTo: 0, seen: {}, pending: {}, profiles: {}, follows: [], filters: { type: [], age: [], res: [], genre: [] }, sort: 'trend7', showFilters: true, tab: 'timeline' };
+let saveTimer = 0;
+function save() { clearTimeout(saveTimer); saveTimer = setTimeout(() => host.call('saveState', { state: JSON.stringify(S) }).catch(() => {}), 800); }
+
+// ---------- runtime state ----------
+let me = { loggedIn: false };
+let installed = new Set();
+const unsubscribed = new Set();           // unsubscribed in this session (folder may still be there)
+const items = new Map();                  // id -> item
+let current = null;                       // the list view on screen
+let selected = null;                      // id shown in the detail panel
+const views = {};                         // tab -> view
+let stack = [];                           // author views opened from a tab
+
+function norm(f) {
+  return {
+    id: String(f.publishedfileid), title: f.title || '(无标题)', creator: String(f.creator || ''), created: +f.time_created || 0, updated: +f.time_updated || 0,
+    preview: f.preview_url || '', previews: f.previews || [], tags: (f.tags || []).map(t => t.tag), short: f.short_description || '', description: f.description || null,
+    subs: +f.subscriptions || 0, fav: +f.favorited || 0, size: +f.file_size || 0, votes: f.vote_data || null, banned: !!f.banned, app: +(f.consumer_appid || f.consumer_app_id || 431960)
+  };
+}
+function remember(f) { const n = norm(f); const old = items.get(n.id); if (old) { for (const k in n) if (n[k] != null && !(Array.isArray(n[k]) && !n[k].length && old[k] && old[k].length)) old[k] = n[k]; return old; } items.set(n.id, n); return n; }
+function subState(id) {
+  if (unsubscribed.has(id)) return '';
+  if (installed.has(id)) return 'installed';
+  if (S.pending[id]) return 'pending';
+  return '';
+}
+
+// ---------- filters ----------
+function renderFilters() {
+  const f = $('#filters'); f.innerHTML = '';
+  for (const [key, title, list] of GROUPS) {
+    f.appendChild(h(`<h4>${title}</h4>`));
+    for (const [tag, label] of list) {
+      const el = h(`<label><input type="checkbox"> ${esc(label)}</label>`);
+      const box = el.querySelector('input'); box.checked = S.filters[key].includes(tag);
+      box.onchange = () => { const arr = S.filters[key]; const i = arr.indexOf(tag); if (box.checked && i < 0) arr.push(tag); if (!box.checked && i >= 0) arr.splice(i, 1); save(); filtersChanged(); };
+      f.appendChild(el);
+    }
+  }
+  const r = h('<button class="reset">清除筛选</button>'); r.onclick = () => { S.filters = { type: [], age: [], res: [], genre: [] }; save(); renderFilters(); filtersChanged(); }; f.appendChild(r);
+}
+function tagGroups() {
+  const groups = [];
+  for (const [key, , list] of GROUPS) { const sel = S.filters[key]; if (sel.length && sel.length < list.length) groups.push({ tags: sel.slice() }); }
+  return groups;
+}
+function passesFilters(it) {
+  for (const [key, , list] of GROUPS) { const sel = S.filters[key]; if (sel.length && sel.length < list.length && !sel.some(t => it.tags.includes(t))) return false; }
+  return true;
+}
+let filterTimer = 0;
+function filtersChanged() { clearTimeout(filterTimer); filterTimer = setTimeout(() => { for (const k of ['timeline', 'browse']) views[k] = null; if (current && current.kind === 'author') renderList(); else openTab(S.tab); }, 350); }
+
+// ---------- top bar ----------
+function renderSort() {
+  const s = $('#sort'); s.innerHTML = SORTS.map(x => `<option value="${x[0]}">${x[1]}</option>`).join('');
+  s.value = S.sort; s.onchange = () => { S.sort = s.value; save(); views.browse = null; openTab('browse'); };
+}
+function renderTabs() {
+  for (const b of document.querySelectorAll('.tab')) b.classList.toggle('on', b.dataset.tab === S.tab && !(current && current.kind === 'author'));
+  $('#sort').style.visibility = S.tab === 'browse' ? 'visible' : 'hidden';
+}
+function renderMe() {
+  const el = $('#me');
+  if (!me.loggedIn) { el.innerHTML = ''; const b = h('<button class="primary">登录 Steam</button>'); b.onclick = login; el.appendChild(b); return; }
+  el.innerHTML = `<img src="${esc(me.avatar)}" alt=""><span>${esc(me.name || me.steamid)}</span>`;
+  const out = h('<button class="ghost" title="退出这个 Steam 账号">退出</button>'); out.onclick = logout; el.appendChild(out);
+}
+async function login() {
+  try { me = await host.call('login'); renderMe(); if (me.loggedIn) { toast('已登录 ' + (me.name || '')); await afterLogin(); } }
+  catch (e) { toast('登录失败：' + errText(e)); }
+}
+async function logout() { me = await host.call('logout'); renderMe(); for (const k in views) views[k] = null; openTab(S.tab); }
+async function afterLogin() { for (const k in views) views[k] = null; loadFollows(); openTab(S.tab); }
+
+// ---------- list views ----------
+// view: { kind: 'timeline'|'browse'|'author', key, ids: [], cursor, page, done, loading, total, error, author }
+function newView(kind, extra) { return Object.assign({ kind, ids: [], cursor: '*', page: 0, done: false, loading: false, total: null, error: null, scroll: 0 }, extra || {}); }
+
+function openTab(tab) {
+  if (current) current.scroll = $('#main').scrollTop;
+  S.tab = tab; save(); stack = [];
+  if (tab === 'following') { current = null; renderTabs(); renderFollowing(); return; }
+  if (tab === 'browse') { const q = $('#search').value.trim(); if (!views.browse || views.browse.search !== q) views.browse = newView('browse', { search: q }); }
+  if (tab === 'timeline' && !views.timeline) views.timeline = newView('timeline');
+  current = views[tab]; renderTabs(); renderList();
+  if (!current.ids.length && !current.done) loadMore(current);
+  $('#main').scrollTop = current.scroll || 0;
+}
+function openAuthor(steamid) {
+  if (current) { current.scroll = $('#main').scrollTop; stack.push(current); } else stack.push({ kind: 'following' });
+  current = newView('author', { author: steamid }); renderTabs(); renderList(); loadMore(current);
+}
+function back() {
+  const v = stack.pop();
+  if (!v || v.kind === 'following') { current = null; if (v) { renderTabs(); renderFollowing(); } else openTab(S.tab); return; }
+  current = v; renderTabs(); renderList(); $('#main').scrollTop = v.scroll || 0;
+}
+
+function needLogin(main) {
+  main.innerHTML = `<div class="empty"><h3>登录 Steam 后使用创意工坊</h3>时间线、搜索、订阅和关注都要用你的 Steam 账号。<br>请登录 <b>Steam 客户端里用的那个账号</b>，订阅的壁纸才会下载到这台电脑。<br><button class="primary">登录 Steam</button></div>`;
+  main.querySelector('button').onclick = login;
+}
+
+async function loadMore(v) {
+  if (v.loading || v.done) return;
+  if (!me.loggedIn && v.kind !== 'author') return;
+  v.loading = true; v.error = null; updateMore(v);
+  try {
+    if (v.kind === 'author') {
+      const r = await host.call('creator', { steamid: v.author, page: v.page + 1 });
+      v.page = r.page; v.total = r.total; v.following = r.following; v.hasFollow = r.hasFollow;
+      setFollow(v.author, r.following, true);
+      const list = ((r.details || {}).response || {}).publishedfiledetails || [];
+      const order = new Map(r.ids.map((id, i) => [id, i]));
+      list.filter(f => +f.result === 1).sort((a, b) => order.get(String(a.publishedfileid)) - order.get(String(b.publishedfileid))).forEach(f => { const it = remember(f); if (!v.ids.includes(it.id)) v.ids.push(it.id); });
+      if (!r.ids.length || v.page * 30 >= v.total) v.done = true;
+    } else {
+      const input = { cursor: v.cursor, numperpage: v.kind === 'timeline' ? 50 : 30 };
+      const groups = tagGroups(); if (groups.length) input.taggroups = groups;
+      if (v.kind === 'timeline') input.query_type = 7;
+      else {
+        let sort = SORTS.find(x => x[0] === S.sort) || SORTS[0];
+        if (sort[0] === 'text' && !v.search) sort = SORTS[0];
+        if (v.search && S.sort.startsWith('trend')) sort = SORTS.find(x => x[0] === 'text');
+        Object.assign(input, sort[2]);
+        if (v.search) input.search_text = v.search;
+      }
+      const r = (await host.call('query', { input })).response || {};
+      v.total = r.total || 0;
+      for (const f of r.publishedfiledetails || []) { if (+f.result !== 1) continue; const it = remember(f); if (!v.ids.includes(it.id)) v.ids.push(it.id); }
+      if (!r.next_cursor || r.next_cursor === v.cursor || !(r.publishedfiledetails || []).length) v.done = true;
+      v.cursor = r.next_cursor || v.cursor;
+    }
+  } catch (e) { v.error = errText(e); if (e.status === 401) { me = await host.call('status'); renderMe(); } }
+  v.loading = false;
+  ensureProfiles(v.ids.map(id => items.get(id).creator));
+  if (v === current) renderList(true);
+  if (v.kind === 'timeline') afterTimelineLoad(v);
+}
+
+// ---------- reading progress (timeline) ----------
+// readUpTo: publish time; everything at or before it counts as read. Items above it are read one by one as they are
+// shown on screen (seen); once the whole stretch between the newest item and the boundary is seen, the boundary moves up.
+function boundaryIndex(v) { const i = v.ids.findIndex(id => items.get(id).created <= S.readUpTo); return i < 0 ? v.ids.length : i; }
+function afterTimelineLoad(v) {
+  if (!v.ids.length) { setUnread(0); return; }
+  if (!S.readUpTo) { S.readUpTo = items.get(v.ids[0]).created; save(); toast('从现在开始记录时间线的浏览进度', 3500); if (v === current) renderList(); }
+  // keep loading until the old boundary is on the page, so the unread count is right (at most ~600 items)
+  const last = items.get(v.ids[v.ids.length - 1]);
+  if (!v.done && !v.error && last.created > S.readUpTo && v.ids.length < 600) { loadMore(v); return; }
+  updateBoundary(v);
+}
+function updateBoundary(v) {
+  const b = boundaryIndex(v);
+  let i = b - 1;
+  while (i >= 0 && S.seen[v.ids[i]]) i--;
+  if (i + 1 < b) {
+    S.readUpTo = items.get(v.ids[i + 1]).created;
+    for (const id of Object.keys(S.seen)) { const it = items.get(id); if (!it || it.created <= S.readUpTo) delete S.seen[id]; }
+    save();
+    if (v === current) placeDivider(v);
+  }
+  setUnread(v.ids.slice(0, boundaryIndex(v)).filter(id => !S.seen[id] && passesFilters(items.get(id))).length);
+}
+function setUnread(n) { const u = $('#unread'); u.hidden = !n; u.textContent = n > 99 ? '99+' : n; host.call('unread', { n }).catch(() => {}); }
+function markAllRead() { const v = views.timeline; if (!v || !v.ids.length) return; S.readUpTo = items.get(v.ids[0]).created; S.seen = {}; save(); renderList(); updateBoundary(v); }
+const seenObserver = new IntersectionObserver(entries => {
+  for (const e of entries) {
+    const el = e.target;
+    if (e.isIntersecting && e.intersectionRatio >= 0.6) { el._t = setTimeout(() => markSeen(el.dataset.id), 700); }
+    else clearTimeout(el._t);
+  }
+}, { root: document.getElementById('main'), threshold: [0, 0.6] });
+// timeline pictures: show the small static image first, fetch the animated preview in the background while the post
+// is near the screen and swap it in once it has arrived; far off screen it goes back to the static image (memory)
+const animObserver = new IntersectionObserver(entries => {
+  for (const e of entries) {
+    const t = e.target, img = t.querySelector('img'), it = items.get(t.dataset.id);
+    if (!img || !it || !it.preview) continue;
+    if (e.isIntersecting) {
+      if (t._anim) continue;
+      t._anim = true;
+      const full = t.dataset.cur || it.preview;
+      const pre = new Image(); t._pre = pre;
+      pre.onload = () => { if (t._anim && t._pre === pre) img.src = full; };
+      pre.src = full;
+    } else if (t._anim) {
+      t._anim = false;
+      if (t._pre) { t._pre.onload = null; t._pre.src = ''; t._pre = null; }
+      img.src = img.dataset.small;
+    }
+  }
+}, { root: document.getElementById('main'), rootMargin: '400px 0px' });
+// detail panel: same idea for the big picture
+function loadAnimated(img, full, staticUrl) {
+  img.src = staticUrl;
+  const pre = new Image();
+  pre.onload = () => { if (img.dataset.want === full) img.src = full; };
+  img.dataset.want = full; pre.src = full;
+}
+function markSeen(id) {
+  if (S.seen[id]) return;
+  const v = views.timeline; if (!v) return;
+  const it = items.get(id); if (!it || it.created <= S.readUpTo) return;
+  S.seen[id] = 1; save();
+  const el = document.querySelector(`.tile[data-id="${id}"]`);
+  if (el) { el.classList.add('seen'); const n = el.querySelector('.badge.new'); if (n) n.remove(); seenObserver.unobserve(el); }
+  clearTimeout(markSeen.t); markSeen.t = setTimeout(() => updateBoundary(v), 300);
+}
+function placeDivider(v) {
+  const grid = $('#grid'); if (!grid) return;
+  const old = $('#divider'); if (old) old.remove();
+  const b = boundaryIndex(v);
+  const tiles = [...grid.querySelectorAll('.tile')];
+  if (b > 0 && b < v.ids.length) {
+    const tile = tiles.find(t => items.get(t.dataset.id).created <= S.readUpTo);
+    const target = tile && (tile.closest('.post') || tile);
+    if (target) target.parentNode.insertBefore(h(`<div class="divider" id="divider"><span>以下是<b>已经看过</b>的（${date(S.readUpTo)} 之前）</span></div>`), target);
+  }
+}
+
+// ---------- rendering ----------
+// mode: 'grid' (browse / author pages), 'pic' (one picture of a timeline post), 'big' (the only picture of a post)
+function tileHtml(it, v, mode) {
+  mode = mode || 'grid';
+  const age = ageOf(it), type = typeOf(it), st = subState(it.id);
+  const isNew = v.kind === 'timeline' && it.created > S.readUpTo && !S.seen[it.id];
+  const read = v.kind === 'timeline' && !isNew;
+  const p = S.profiles[it.creator];
+  const who = v.kind === 'author' ? '' : `<span data-author="${it.creator}">${esc(p ? p.n : '…')}</span> · `;
+  const canSub = me.loggedIn && !st && it.app === 431960;
+  return `<div class="tile${read ? ' seen' : ''}${selected === it.id ? ' sel' : ''}" data-id="${it.id}" data-mode="${mode}">
+    <div class="thumb"><img loading="lazy" src="${esc(small(it.preview, mode === 'big' ? 760 : 320))}" data-small="${esc(small(it.preview, mode === 'big' ? 760 : 320))}" alt="">
+      <div class="badges">${isNew ? '<span class="badge new">NEW</span>' : ''}${age && age !== 'Everyone' ? `<span class="badge ${age}">${LABEL[age]}</span>` : ''}</div>
+      ${type ? `<span class="badge type">${LABEL[type]}</span>` : ''}
+      ${st === 'installed' ? '<span class="badge sub">✓ 已订阅</span>' : st === 'pending' ? '<span class="badge dl">下载中</span>' : ''}
+      ${canSub ? '<button class="qs" title="直接订阅，Steam 会自动下载">+ 订阅</button>' : ''}
+    </div>
+    ${mode === 'big' ? '' : `<div class="t" title="${esc(it.title)}">${esc(it.title)}</div>`}
+    ${mode === 'grid' ? `<div class="s">${who}${v.kind === 'browse' && S.sort === 'subs' ? num(it.subs) + ' 订阅' : ago(it.created)}</div>` : ''}
+  </div>`;
+}
+// optional ("合并同一作者的连续上传"): uploads in a row by the same author, each within 6 hours of the next,
+// at most 4, never across the "already read" line, become one post with a picture grid
+function groupPosts(ids) {
+  const posts = []; let cur = null;
+  for (const id of ids) {
+    const it = items.get(id), read = it.created <= S.readUpTo;
+    if (cur && cur.creator === it.creator && cur.read === read && cur.items.length < 4 && cur.last - it.created < 6 * 3600) { cur.items.push(it); cur.last = it.created; }
+    else { cur = { creator: it.creator, read, items: [it], last: it.created }; posts.push(cur); }
+  }
+  return posts;
+}
+function groupHtml(post, v) {
+  if (post.items.length === 1) return postHtml(post.items[0], v);
+  const p = S.profiles[post.creator] || {};
+  const first = post.items[0], n = post.items.length;
+  const when = ago(first.created) + (first.created - post.last > 600 ? ' ~ ' + ago(post.last) : '');
+  return `<div class="post${post.read ? ' read' : ''}" data-creator="${post.creator}">
+    <div class="ph"><img class="av" data-avatar="${post.creator}" src="${esc(p.a || '')}" alt=""><div class="grow"><div class="n" data-author="${post.creator}">${esc(p.n || '…')}</div><div class="s">${when}</div></div></div>
+    <div class="txt">发布了 <b>${n}</b> 个新壁纸</div>
+    <div class="pics multi ${n === 2 || n === 4 ? 'n2' : ''}">${post.items.map(it => tileHtml(it, v, 'pic')).join('')}</div>
+    <div class="inline"></div>
+    <div class="pf"><span style="color:var(--fg3)">点一张图查看详情和订阅</span><a data-works="${post.creator}">作者的全部作品</a></div>
+  </div>`;
+}
+// timeline: one post per wallpaper, like a Weibo feed; everything about the wallpaper is in the post (no side panel)
+function postHtml(it, v) {
+  const p = S.profiles[it.creator] || {};
+  const read = it.created <= S.readUpTo;
+  const meta = [LABEL[typeOf(it)], LABEL[ageOf(it)], (it.tags.find(t => / x \d/.test(t)) || '').replace(' x ', '×')].filter(Boolean).join(' · ');
+  return `<div class="post${read ? ' read' : ''}" data-creator="${it.creator}" data-post="${it.id}">
+    <div class="ph"><img class="av" data-avatar="${it.creator}" src="${esc(p.a || '')}" alt=""><div class="grow"><div class="n" data-author="${it.creator}">${esc(p.n || '…')}</div><div class="s" title="${date(it.created)}">${ago(it.created)}${meta ? ' · ' + esc(meta) : ''}</div></div></div>
+    ${bodyHtml(it, v)}
+  </div>`;
+}
+// title, description, picture (+ other previews), tags, numbers and the action bar of one wallpaper
+function bodyHtml(it, v) {
+  const imgs = it.previews.filter(x => +x.preview_type === 0 && x.url).map(x => x.url);
+  const videos = it.previews.filter(x => +x.preview_type === 1 && x.youtubevideoid).map(x => x.youtubevideoid);
+  const desc = bbcode(it.description != null ? it.description : it.short);
+  const more = it.description == null && desc.length >= 120;
+  const vd = it.votes, total = vd ? (+vd.votes_up || 0) + (+vd.votes_down || 0) : 0;
+  const nums = [it.size ? size(it.size) : '', num(it.subs) + ' 订阅', total ? Math.round(vd.votes_up / total * 100) + '% 好评' : ''].filter(Boolean).join(' · ');
+  const tags = it.tags.filter(t => t !== 'Wallpaper' && t !== typeOf(it) && t !== ageOf(it) && !/ x \d/.test(t));
+  return `<div class="txt"><b>${esc(it.title)}</b>${desc ? `<p class="d${it.description != null ? ' full' : ''}">${esc(desc)}</p>` : ''}${more ? `<a data-more="${it.id}">展开全文</a>` : ''}</div>
+    <div class="pics n1">${tileHtml(it, v, 'big')}</div>
+    ${imgs.length || videos.length ? `<div class="strip" data-for="${it.id}"><img class="on" src="${esc(small(it.preview, 160))}" data-full="${esc(it.preview)}" title="封面">${imgs.map(u => `<img src="${esc(small(u, 160))}" data-full="${esc(u)}">`).join('')}${videos.map(y => `<img src="https://i.ytimg.com/vi/${esc(y)}/mqdefault.jpg" data-yt="${esc(y)}" title="在 YouTube 打开视频">`).join('')}</div>` : ''}
+    ${tags.length ? `<div class="chips">${tags.map(t => `<span class="chip" data-tag="${esc(t)}">${esc(LABEL[t] || t)}</span>`).join('')}</div>` : ''}
+    <div class="meta">${nums}</div>
+    <div class="pf" data-actions="${it.id}">${postActions(it)}</div>`;
+}
+function postActions(it) {
+  const st = subState(it.id);
+  const sub = !me.loggedIn || it.app !== 431960 ? ''
+    : st === 'installed' ? `<span class="done">✓ 已订阅</span><a data-unsub="${it.id}">取消订阅</a>`
+    : st === 'pending' ? `<span class="wait">已订阅 · 等待 Steam 下载</span><a data-unsub="${it.id}">取消订阅</a>`
+    : `<button class="primary" data-sub="${it.id}">+ 订阅</button>`;
+  return `${sub}<a data-works="${it.creator}">作者的全部作品</a><a data-steam="${it.id}">在 Steam 中打开</a><a data-web="${it.id}">网页</a>`;
+}
+// in a merged post, clicking a picture opens that wallpaper's details inside the post (again: closes them)
+function toggleInline(tile) {
+  const post = tile.closest('.post'), box = post.querySelector('.inline'), id = tile.dataset.id;
+  for (const t of post.querySelectorAll('.pics.multi .tile')) t.classList.toggle('sel', t === tile && box.dataset.id !== id);
+  if (box.dataset.id === id) { box.dataset.id = ''; box.innerHTML = ''; return; }
+  box.dataset.id = id; box.innerHTML = bodyHtml(items.get(id), current);
+  for (const el of box.querySelectorAll('.tile')) animObserver.observe(el);
+  markSeen(id);
+}
+async function expandText(id) {
+  const it = items.get(id);
+  try {
+    const r = await host.call('details', { ids: [id] });
+    const f = ((r.response || {}).publishedfiledetails || [])[0];
+    it.description = f && +f.result === 1 ? (f.description || '') : it.short;
+  } catch (e) { toast('读取简介失败：' + errText(e)); return; }
+  for (const a of document.querySelectorAll(`a[data-more="${id}"]`)) {
+    const d = a.parentNode.querySelector('p.d'); if (d) { d.textContent = bbcode(it.description); d.classList.add('full'); }
+    a.remove();
+  }
+}
+function lightbox(url) { const lb = $('#lightbox'); lb.querySelector('img').src = url; lb.classList.add('on'); }
+function renderList(keepScroll) {
+  const main = $('#main'), v = current; if (!v) return;
+  $('#body').classList.toggle('nodetail', v.kind === 'timeline');
+  const top = main.scrollTop;
+  if (!me.loggedIn && v.kind !== 'author') { needLogin(main); return; }
+  main.innerHTML = '';
+  if (me.loggedIn && me.clientSteamid && me.clientSteamid !== me.steamid)
+    main.appendChild(h(`<div class="warnbox">这里登录的是「${esc(me.name)}」，但 Steam 客户端登录的是「${esc(me.clientName || me.clientSteamid)}」。订阅会加到这里登录的账号上，Steam 客户端不会下载。请退出后换成客户端的账号。</div>`));
+  if (v.kind === 'author') renderAuthorHead(main, v);
+  const bar = h('<div class="bar"></div>');
+  if (v.kind === 'timeline') {
+    const b = boundaryIndex(v);
+    bar.innerHTML = `<span title="你在 Steam 上关注的作者发布的壁纸，按发布时间排列">关注的作者的新作品</span><label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="merge"${S.mergePosts ? ' checked' : ''}> 合并同一作者的连续上传</label><span class="grow"></span>`;
+    bar.querySelector('#merge').onchange = e => { S.mergePosts = e.target.checked; save(); renderList(); };
+    const jump = h('<button>跳到上次看到的位置</button>'); jump.disabled = !(b > 0 && b < v.ids.length); jump.onclick = () => { const d = $('#divider'); if (d) d.scrollIntoView({ behavior: 'smooth', block: 'center' }); };
+    const all = h('<button>全部标为已读</button>'); all.onclick = markAllRead;
+    const re = h('<button class="ghost" title="重新加载">刷新</button>'); re.onclick = () => { views.timeline = null; openTab('timeline'); };
+    bar.append(jump, all, re);
+  } else if (v.kind === 'browse') {
+    bar.innerHTML = `<span>${v.search ? `搜索「${esc(v.search)}」` : '全部壁纸'}${v.total != null ? '，共 ' + num(v.total) + ' 个' : ''}</span>`;
+    if (v.search) { const c = h('<a>清除搜索</a>'); c.onclick = () => { $('#search').value = ''; views.browse = null; openTab('browse'); }; bar.appendChild(c); }
+  }
+  main.appendChild(bar);
+  const feed = v.kind === 'timeline';
+  const grid = h(`<div class="${feed ? 'feed' : 'grid'}" id="grid"></div>`);
+  const shown = v.ids.map(id => items.get(id)).filter(it => v.kind !== 'author' || passesFilters(it));
+  grid.innerHTML = !feed ? shown.map(it => tileHtml(it, v)).join('')
+    : S.mergePosts ? groupPosts(shown.map(it => it.id)).map(p => groupHtml(p, v)).join('')
+    : shown.map(it => postHtml(it, v)).join('');
+  main.appendChild(grid);
+  if (feed) {
+    for (const post of grid.querySelectorAll('.post')) if (me.loggedIn && post.dataset.creator !== me.steamid) post.querySelector('.ph').appendChild(followButton(post.dataset.creator));
+    placeDivider(v);
+    for (const el of grid.querySelectorAll('.tile:not(.seen)')) seenObserver.observe(el);
+    for (const el of grid.querySelectorAll('.tile')) animObserver.observe(el);
+  }
+  const more = h('<div class="more" id="more"></div>'); grid.appendChild(more); updateMore(v);
+  if (!v.loading && !v.error && !shown.length && v.done) {
+    grid.innerHTML = '';
+    main.appendChild(h(`<div class="empty">${v.kind === 'timeline' ? '<h3>时间线是空的</h3>还没有关注任何作者，或者关注的作者还没发布过壁纸。<br>在壁纸详情里点作者旁边的「关注」，或在 Steam 里关注创意工坊作者。' : v.kind === 'author' && v.ids.length ? '筛选条件下没有作品' : '没有找到壁纸'}</div>`));
+  }
+  bindTiles(grid);
+  if (keepScroll) main.scrollTop = top;
+  moreObserver.disconnect(); moreObserver.observe(more);
+}
+function updateMore(v) {
+  const m = $('#more'); if (!m || v !== current) return;
+  m.innerHTML = v.loading ? '<span class="spin"></span> 正在加载…' : v.error ? `加载失败：${esc(v.error)} <a>重试</a>` : v.done ? (v.ids.length ? '没有更多了' : '') : '';
+  const a = m.querySelector('a'); if (a) a.onclick = () => { v.error = null; loadMore(v); };
+}
+const moreObserver = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting) && current) loadMore(current); }, { root: document.getElementById('main'), rootMargin: '0px 0px 800px 0px' });
+function bindTiles(grid) {
+  grid.onclick = e => {
+    const qs = e.target.closest('.qs');
+    if (qs) { e.stopPropagation(); const it = items.get(qs.closest('.tile').dataset.id); qs.disabled = true; doSubscribe(it, true); return; }
+    const works = e.target.closest('[data-works]'); if (works) { openAuthor(works.dataset.works); return; }
+    const sub = e.target.closest('[data-sub]'); if (sub) { sub.outerHTML = '<span class="spin"></span>'; doSubscribe(items.get(sub.dataset.sub), true); return; }
+    const unsub = e.target.closest('[data-unsub]'); if (unsub) { unsub.outerHTML = '<span class="spin"></span>'; doSubscribe(items.get(unsub.dataset.unsub), false); return; }
+    const more = e.target.closest('[data-more]'); if (more) { more.textContent = '正在读取…'; expandText(more.dataset.more); return; }
+    const st = e.target.closest('[data-steam]'); if (st) { host.call('open', { url: 'steam://url/CommunityFilePage/' + st.dataset.steam }); return; }
+    const web = e.target.closest('[data-web]'); if (web) { host.call('open', { url: 'https://steamcommunity.com/sharedfiles/filedetails/?id=' + web.dataset.web }); return; }
+    const tag = e.target.closest('[data-tag]'); if (tag) { searchTag(tag.dataset.tag); return; }
+    const who = e.target.closest('.ph .n, .ph .av'); if (who) { openAuthor(who.closest('.post').dataset.creator); return; }
+    const sim = e.target.closest('.strip img');
+    if (sim) {   // other previews of a post: show it in the post's big picture (videos open on YouTube)
+      if (sim.dataset.yt) { host.call('open', { url: 'https://www.youtube.com/watch?v=' + sim.dataset.yt }); return; }
+      const strip = sim.closest('.strip'), tile = strip.parentNode.querySelector(`.tile[data-id="${strip.dataset.for}"][data-mode=big]`);
+      if (tile) { const img = tile.querySelector('img'); tile.dataset.cur = sim.dataset.full; img.dataset.small = small(sim.dataset.full, 760); loadAnimated(img, sim.dataset.full, img.dataset.small); }
+      for (const o of strip.querySelectorAll('img')) o.classList.toggle('on', o === sim);
+      return;
+    }
+    const t = e.target.closest('.tile'); if (!t) return;
+    if (t.dataset.mode === 'big') lightbox(t.dataset.cur || items.get(t.dataset.id).preview);
+    else if (t.dataset.mode === 'pic') toggleInline(t);
+    else select(t.dataset.id);
+  };
+  grid.onmouseover = e => {   // hover plays the animated preview, like Wallpaper Engine
+    const t = e.target.closest('.tile'); if (!t || t._hover || t._anim) return; t._hover = true;
+    const img = t.querySelector('img'); const it = items.get(t.dataset.id);
+    t._ht = setTimeout(() => { if (it.preview) img.src = it.preview; }, 350);
+    t.onmouseleave = () => { clearTimeout(t._ht); t._hover = false; img.src = img.dataset.small; };
+  };
+}
+function renderAuthorHead(main, v) {
+  const p = S.profiles[v.author] || {};
+  const head = h(`<div class="authorhead"><button class="ghost" title="返回">←</button><img src="${esc(p.a || '')}" alt=""><div style="flex:1;min-width:0"><h2>${esc(p.n || v.author)}</h2><div class="s">${v.total != null ? v.total + ' 个 Wallpaper Engine 作品' : '正在读取作品…'}</div></div></div>`);
+  head.querySelector('button').onclick = back;
+  if (me.loggedIn && v.author !== me.steamid) head.appendChild(followButton(v.author));
+  const open = h('<button class="ghost">在 Steam 中打开</button>'); open.onclick = () => host.call('open', { url: `https://steamcommunity.com/profiles/${v.author}/myworkshopfiles/?appid=431960` }); head.appendChild(open);
+  main.appendChild(head);
+  ensureProfiles([v.author]);
+}
+
+// ---------- authors ----------
+const follows = () => new Set(S.follows);
+function setFollow(id, on, quiet) {
+  const set = follows(); if (on) set.add(id); else set.delete(id); S.follows = [...set]; save();
+  for (const b of document.querySelectorAll(`button[data-follow="${id}"]`)) paintFollow(b, on);
+}
+function paintFollow(b, on) { b.textContent = on ? '已关注' : '+ 关注'; b.classList.toggle('primary', !on); b.title = on ? '点击取消关注' : '关注后，作者的新作品会出现在时间线里'; }
+function followButton(id) {
+  const b = h(`<button data-follow="${id}"></button>`); paintFollow(b, follows().has(id));
+  b.onclick = async e => {
+    e.stopPropagation(); const on = !follows().has(id); b.disabled = true;
+    try { const ok = await host.call('follow', { steamid: id, on }); if (!ok) throw new Error('Steam 没有确认'); setFollow(id, on); toast(on ? '已关注，新作品会出现在时间线里' : '已取消关注'); views.timeline = null; }
+    catch (err) { toast((on ? '关注' : '取消关注') + '失败：' + errText(err)); }
+    b.disabled = false;
+  };
+  return b;
+}
+async function loadFollows() { if (!me.loggedIn) return; try { S.follows = await host.call('following'); save(); ensureProfiles(S.follows); if (!current) renderFollowing(); } catch (e) { } }
+let profileQueue = new Set(), profileTimer = 0;
+function ensureProfiles(ids) {
+  const week = Date.now() - 7 * 86400e3;
+  for (const id of ids) if (id && (!S.profiles[id] || S.profiles[id].t < week)) profileQueue.add(id);
+  if (!profileQueue.size) return;
+  clearTimeout(profileTimer);
+  profileTimer = setTimeout(async () => {
+    const batch = [...profileQueue].slice(0, 60); batch.forEach(x => profileQueue.delete(x));
+    try {
+      for (const p of await host.call('profiles', { ids: batch })) if (p.name) S.profiles[p.steamid] = { n: p.name, a: p.avatar, t: Date.now() };
+      save();
+      for (const el of document.querySelectorAll('[data-author]')) { const p = S.profiles[el.dataset.author]; if (p) el.textContent = p.n; }
+      for (const el of document.querySelectorAll('[data-avatar]')) { const p = S.profiles[el.dataset.avatar]; if (p) el.src = p.a; }
+      if (current && current.kind === 'author' && batch.includes(current.author)) { const hd = $('.authorhead h2'); if (hd) hd.textContent = S.profiles[current.author].n; const im = $('.authorhead img'); if (im) im.src = S.profiles[current.author].a; }
+      if (!current && S.tab === 'following') renderFollowing();
+    } catch (e) { }
+    if (profileQueue.size) ensureProfiles([]);
+  }, 120);
+}
+function renderFollowing() {
+  const main = $('#main');
+  $('#body').classList.add('nodetail');
+  if (!me.loggedIn) { needLogin(main); return; }
+  const list = S.follows;
+  main.innerHTML = `<div class="bar"><span>你在 Steam 上关注的 ${list.length} 位玩家 / 作者。点一个查看 TA 上传的全部壁纸。</span><span class="grow"></span></div>`;
+  const re = h('<button class="ghost">刷新</button>'); re.onclick = loadFollows; main.firstChild.appendChild(re);
+  if (!list.length) { main.appendChild(h('<div class="empty"><h3>还没有关注任何作者</h3>在壁纸详情里点作者旁边的「关注」，作者的新作品就会出现在时间线里。</div>')); return; }
+  const grid = h('<div class="people"></div>');
+  for (const id of list) {
+    const p = S.profiles[id] || {};
+    const el = h(`<div class="person"><img data-avatar="${id}" src="${esc(p.a || '')}" alt=""><div style="flex:1;min-width:0"><div class="n" data-author="${id}">${esc(p.n || id)}</div><div class="s">查看全部作品</div></div></div>`);
+    el.onclick = () => openAuthor(id);
+    el.appendChild(followButton(id));
+    grid.appendChild(el);
+  }
+  main.appendChild(grid);
+}
+
+// ---------- detail panel ----------
+async function select(id, fromOutside) {
+  selected = id;
+  $('#body').classList.remove('nodetail');   // e.g. "创意工坊页面" on the overview opens a wallpaper while the timeline is shown
+  for (const t of document.querySelectorAll('.tile.sel')) t.classList.remove('sel');
+  const tile = document.querySelector(`.tile[data-id="${id}"]`); if (tile) tile.classList.add('sel');
+  if (views.timeline && views.timeline.ids.includes(id)) markSeen(id);
+  let it = items.get(id);
+  if (!it || it.description == null) {
+    if (!it) $('#detail').innerHTML = '<div class="none"><span class="spin"></span></div>';
+    try { const r = await host.call('details', { ids: [id] }); const f = ((r.response || {}).publishedfiledetails || [])[0]; if (f && +f.result === 1) { it = remember(f); if (!it.description) it.description = f.description || ''; } }
+    catch (e) { if (!it) { $('#detail').innerHTML = `<div class="none">读取失败：${esc(errText(e))}</div>`; return; } }
+  }
+  if (!it) { $('#detail').innerHTML = '<div class="none">这个壁纸不存在或已被删除</div>'; return; }
+  if (selected !== id) return;
+  renderDetail(it);
+  ensureProfiles([it.creator]);
+}
+function renderDetail(it) {
+  const p = S.profiles[it.creator] || {};
+  const imgs = [it.preview, ...it.previews.filter(x => +x.preview_type === 0 && x.url).map(x => x.url)];
+  const videos = it.previews.filter(x => +x.preview_type === 1 && x.youtubevideoid).map(x => x.youtubevideoid);
+  const v = it.votes; const total = v ? (+v.votes_up || 0) + (+v.votes_down || 0) : 0;
+  const rating = v && total ? Math.round(v.votes_up / total * 100) + '% 好评（' + total + ' 票）' : v ? '暂无评价' : '';
+  const shownTags = it.tags.filter(t => t !== 'Wallpaper');
+  const el = h(`<div class="dv">
+    <img class="big" alt="">
+    ${imgs.length > 1 || videos.length ? `<div class="strip">${imgs.map((u, i) => `<img src="${esc(small(u))}" data-full="${esc(u)}" class="${i ? '' : 'on'}">`).join('')}${videos.map(y => `<img src="https://i.ytimg.com/vi/${esc(y)}/mqdefault.jpg" data-yt="${esc(y)}" title="在 YouTube 打开视频">`).join('')}</div>` : ''}
+    <h2>${esc(it.title)}</h2>
+    <div class="who"><img data-avatar="${it.creator}" src="${esc(p.a || '')}" alt=""><div class="grow"><div class="n" data-author="${it.creator}">${esc(p.n || '…')}</div><a class="works">作者的全部作品</a></div></div>
+    <div class="actions"></div>
+    <div class="stats">
+      <span>发布</span><span>${it.created ? date(it.created) + '（' + ago(it.created) + '）' : '-'}</span>
+      ${it.updated && it.updated - it.created > 3600 ? `<span>更新</span><span>${date(it.updated)}</span>` : ''}
+      <span>大小</span><span>${it.size ? size(it.size) : '-'}</span>
+      <span>订阅</span><span>${num(it.subs)}</span>
+      ${rating ? `<span>评价</span><span>${rating}</span>` : ''}
+      <span>ID</span><span style="user-select:text">${it.id}</span>
+    </div>
+    <div class="chips">${shownTags.map(t => `<span class="chip" data-tag="${esc(t)}">${esc(LABEL[t] || t)}</span>`).join('')}</div>
+    <div class="desc">${esc(bbcode(it.description != null ? it.description : it.short)) || '<span style="color:var(--fg3)">没有简介</span>'}</div>
+  </div>`);
+  const big = el.querySelector('.big');
+  loadAnimated(big, it.preview, small(it.preview, 760));
+  for (const im of el.querySelectorAll('.strip img')) im.onclick = () => {
+    if (im.dataset.yt) { host.call('open', { url: 'https://www.youtube.com/watch?v=' + im.dataset.yt }); return; }
+    loadAnimated(big, im.dataset.full, small(im.dataset.full, 760)); for (const o of el.querySelectorAll('.strip img')) o.classList.toggle('on', o === im);
+  };
+  el.querySelector('.works').onclick = () => openAuthor(it.creator);
+  el.querySelector('.who .n').onclick = () => openAuthor(it.creator);
+  el.querySelector('.who .n').style.cursor = 'pointer';
+  if (me.loggedIn && it.creator !== me.steamid) el.querySelector('.who').appendChild(followButton(it.creator));
+  for (const c of el.querySelectorAll('.chip')) c.onclick = () => searchTag(c.dataset.tag);
+  renderActions(el.querySelector('.actions'), it);
+  const d = $('#detail'); d.innerHTML = ''; d.appendChild(el); d.scrollTop = 0;
+}
+function renderActions(box, it) {
+  box.innerHTML = '';
+  const st = subState(it.id);
+  if (me.loggedIn && it.app === 431960) {
+    const b = h(`<button class="${st ? '' : 'primary'}">${st ? '取消订阅' : '订阅'}</button>`);
+    if (!st) b.classList.add('primary');
+    b.onclick = async () => { b.disabled = true; b.innerHTML = '<span class="spin"></span>'; await doSubscribe(it, !st); };
+    box.appendChild(b);
+  }
+  const steam = h('<button>在 Steam 中打开</button>'); steam.onclick = () => host.call('open', { url: 'steam://url/CommunityFilePage/' + it.id });
+  const web = h('<button class="ghost">网页</button>'); web.title = '在浏览器打开创意工坊页面'; web.onclick = () => host.call('open', { url: 'https://steamcommunity.com/sharedfiles/filedetails/?id=' + it.id });
+  box.append(steam, web);
+  const msg = st === 'installed' ? '<div class="status ok">✓ 已订阅，已下载到本机</div>' : st === 'pending' ? '<div class="status wait">已订阅，等待 Steam 客户端下载（Steam 要在运行）</div>' : '';
+  if (msg) box.appendChild(h(msg));
+}
+async function doSubscribe(it, on) {
+  try {
+    const ok = await host.call('subscribe', { id: it.id, on });
+    if (!ok) throw new Error('Steam 没有确认');
+    if (on) { S.pending[it.id] = Date.now(); unsubscribed.delete(it.id); toast('已订阅「' + it.title + '」，Steam 客户端会自动下载'); }
+    else { delete S.pending[it.id]; unsubscribed.add(it.id); toast('已取消订阅'); }
+    save();
+  } catch (e) { toast((on ? '订阅' : '取消订阅') + '失败：' + errText(e)); }
+  refreshTile(it.id);
+  if (selected === it.id) { const box = $('.dv .actions'); if (box) renderActions(box, it); }
+}
+// after (un)subscribing: redraw the badges of every picture of this wallpaper and the action bars in the posts
+function refreshTile(id) {
+  const it = items.get(id); if (!it || !current) return;
+  for (const pf of document.querySelectorAll(`[data-actions="${id}"]`)) pf.innerHTML = postActions(it);
+  for (const t of document.querySelectorAll(`.tile[data-id="${id}"]`)) {
+    const n = h(tileHtml(it, current, t.dataset.mode));
+    if (t.dataset.cur) { n.dataset.cur = t.dataset.cur; n.querySelector('img').dataset.small = t.querySelector('img').dataset.small; }
+    n.classList.toggle('sel', t.classList.contains('sel'));
+    t.replaceWith(n);
+    if (current.kind === 'timeline') { if (!n.classList.contains('seen')) seenObserver.observe(n); animObserver.observe(n); }
+  }
+}
+function bbcode(s) {
+  return String(s || '').replace(/\[url=([^\]]*)\]([\s\S]*?)\[\/url\]/gi, '$2 ($1)').replace(/\[img\][\s\S]*?\[\/img\]/gi, '').replace(/\[\/?[a-z*][^\]]*\]/gi, '').replace(/\n{3,}/g, '\n\n').trim();
+}
+function searchTag(tag) {
+  for (const [key, , list] of GROUPS) if (list.some(x => x[0] === tag)) { S.filters[key] = [tag]; save(); renderFilters(); views.browse = null; views.timeline = null; openTab('browse'); return; }
+  $('#search').value = tag; views.browse = null; openTab('browse');
+}
+
+// ---------- installed / pending ----------
+async function refreshInstalled() {
+  try {
+    installed = new Set(await host.call('installed'));
+    let changed = false;
+    for (const id of Object.keys(S.pending)) if (installed.has(id) || Date.now() - S.pending[id] > 7 * 86400e3) { delete S.pending[id]; changed = true; if (installed.has(id)) refreshTile(id); }
+    if (changed) { save(); if (selected) { const it = items.get(selected); const box = $('.dv .actions'); if (it && box) renderActions(box, it); } }
+  } catch (e) { }
+}
+
+// ---------- events from the host ----------
+async function onHostEvent(m) {
+  if (m.event === 'theme') applyTheme(m.theme, m.accent);
+  else if (m.event === 'auth') { me = await host.call('status'); renderMe(); }
+  else if (m.event === 'showItem') select(m.id, true);
+}
+function applyTheme(theme, accent) {
+  document.documentElement.classList.toggle('light', theme === 'light');
+  if (accent) document.documentElement.style.setProperty('--accent', accent);
+}
+
+// ---------- start ----------
+(async function start() {
+  const q = new URLSearchParams(location.search); applyTheme(q.get('theme'), q.get('accent'));
+  try { const st = await host.call('loadState'); if (st) S = Object.assign(S, JSON.parse(st)); } catch (e) { }
+  S.filters = Object.assign({ type: [], age: [], res: [], genre: [] }, S.filters || {});
+  for (const b of document.querySelectorAll('.tab')) b.onclick = () => openTab(b.dataset.tab);
+  const lb = $('#lightbox'), closeLb = () => { lb.classList.remove('on'); lb.querySelector('img').src = ''; };
+  lb.onclick = closeLb; document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLb(); });
+  $('#search').onkeydown = e => { if (e.key === 'Enter') { const t = $('#search').value.trim(); if (t && S.sort.startsWith('trend')) { S.sort = 'text'; $('#sort').value = 'text'; } views.browse = null; openTab('browse'); } };
+  const body = $('#body');
+  const syncFilters = () => body.classList.toggle('nofilters', !S.showFilters);
+  const narrow = () => window.innerWidth <= 1150;
+  $('#filterBtn').onclick = e => {
+    e.stopPropagation();
+    if (narrow()) body.classList.toggle('overlay');
+    else { S.showFilters = !S.showFilters; save(); syncFilters(); }
+  };
+  // a click outside the floating filter panel closes it
+  document.addEventListener('click', e => { if (body.classList.contains('overlay') && !e.target.closest('#filters')) body.classList.remove('overlay'); });
+  syncFilters();
+  renderFilters(); renderSort();
+  await refreshInstalled(); setInterval(refreshInstalled, 30000);
+  host.send('ready');
+  try { me = await host.call('status'); } catch (e) { me = { loggedIn: false }; }
+  renderMe();
+  if (me.loggedIn) loadFollows();
+  openTab(S.tab || 'timeline');
+  // the timeline is the main view; load it in the background so the unread count shows even on other tabs
+  if (me.loggedIn && S.tab !== 'timeline') { views.timeline = newView('timeline'); loadMore(views.timeline); }
+})();
+</script>
+</body>
+</html>
