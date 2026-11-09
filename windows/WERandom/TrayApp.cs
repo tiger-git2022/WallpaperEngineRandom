@@ -631,19 +631,37 @@ public class TrayApp : ApplicationContext
 			{
 				new TrayMenu.Entry { Text = _statusText.Length > 0 ? _statusText : (_engine.Cfg.Paused ? "已暂停" : ("运行中 · 每 " + _engine.Cfg.IntervalMinutes + " 分钟")), Enabled = false, Icon = Wpf.Ui.Controls.SymbolRegular.Timer24 }
 			};
-			if (string.IsNullOrEmpty(_engine.LastTitle))
+			// 正在播放：读 WE 自己的 config.json，在 WE 里手动换的也算；每台显示器一张缩略图，点一下打开壁纸文件夹
+			System.Collections.Generic.List<CurrentWallpaper.Item> now = _engine.CurrentWallpapers();
+			if (now.Count > 0)
 			{
-				try
+				foreach (CurrentWallpaper.Item it in now)
 				{
-					_engine.LastTitle = _engine.LastPlayedTitle();
-				}
-				catch
-				{
+					string folder = it.Folder;
+					entries.Add(new TrayMenu.Entry
+					{
+						Text = (now.Count > 1 ? it.Monitor + "：" : "") + it.Title,
+						Image = MainWindow.LoadThumb(it.PreviewPath, 512),
+						Click = () => OpenFile(folder)
+					});
 				}
 			}
-			if (!string.IsNullOrEmpty(_engine.LastTitle))
+			else
 			{
-				entries.Add(new TrayMenu.Entry { Text = "当前：" + _engine.LastTitle, Enabled = false, Icon = Wpf.Ui.Controls.SymbolRegular.Image24 });
+				if (string.IsNullOrEmpty(_engine.LastTitle))
+				{
+					try
+					{
+						_engine.LastTitle = _engine.LastPlayedTitle();
+					}
+					catch
+					{
+					}
+				}
+				if (!string.IsNullOrEmpty(_engine.LastTitle))
+				{
+					entries.Add(new TrayMenu.Entry { Text = "当前：" + _engine.LastTitle, Enabled = false, Icon = Wpf.Ui.Controls.SymbolRegular.Image24 });
+				}
 			}
 			entries.Add(new TrayMenu.Entry { Separator = true });
 			entries.Add(new TrayMenu.Entry { Text = "打开主界面", Bold = true, Icon = Wpf.Ui.Controls.SymbolRegular.Home24, Click = () => ShowSettings(-1) });
