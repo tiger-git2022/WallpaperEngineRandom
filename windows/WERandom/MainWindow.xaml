@@ -77,6 +77,14 @@
                     <ui:Button x:Name="NavHome" Style="{StaticResource NavButton}" Tag="0" Click="Nav_Click">
                         <StackPanel Orientation="Horizontal"><ui:SymbolIcon Symbol="Home24" Margin="0,0,12,0"/><TextBlock Text="概览"/></StackPanel>
                     </ui:Button>
+                    <ui:Button Style="{StaticResource NavButton}" Tag="5" Click="Nav_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <ui:SymbolIcon Symbol="Globe24" Margin="0,0,12,0"/><TextBlock Text="创意工坊"/>
+                            <Border x:Name="NavWorkshopBadge" Visibility="Collapsed" Margin="8,0,0,0" Padding="6,0" CornerRadius="9" MinWidth="18" Height="18" Background="#FF8C42" VerticalAlignment="Center">
+                                <TextBlock x:Name="NavWorkshopCount" FontSize="11" FontWeight="SemiBold" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </StackPanel>
+                    </ui:Button>
                     <ui:Button Style="{StaticResource NavButton}" Tag="1" Click="Nav_Click">
                         <StackPanel Orientation="Horizontal"><ui:SymbolIcon Symbol="Settings24" Margin="0,0,12,0"/><TextBlock Text="基本设置"/></StackPanel>
                     </ui:Button>
@@ -347,6 +355,9 @@
                             </DataGrid>
                         </DockPanel>
 
+                        <!-- 5 创意工坊 (WebView2, created on first visit) -->
+                        <Border x:Name="PageWorkshop" Visibility="Collapsed"/>
+
                         <!-- 4 设备同步 -->
                         <ScrollViewer x:Name="PageDevices" Padding="24,16" Visibility="Collapsed">
                             <StackPanel>
@@ -383,7 +394,7 @@
                 </Border>
 
                 <!-- footer -->
-                <Border Grid.Row="2" Padding="24,10,24,12" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}">
+                <Border x:Name="Footer" Grid.Row="2" Padding="24,10,24,12" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}">
                     <DockPanel>
                         <TextBlock x:Name="SaveStatus" Style="{StaticResource Muted}" VerticalAlignment="Center"/>
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">

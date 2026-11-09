@@ -46,7 +46,9 @@ public partial class MainWindow : FluentWindow
 		public string Played { get; set; }
 	}
 
-	private static readonly string[] PageNames = { "概览", "基本设置", "权重档位", "壁纸预览", "设备同步" };
+	private static readonly string[] PageNames = { "概览", "基本设置", "权重档位", "壁纸预览", "设备同步", "创意工坊" };
+
+	private WorkshopView _workshop;
 
 	private readonly Engine _engine;
 
@@ -69,7 +71,7 @@ public partial class MainWindow : FluentWindow
 		_engine = engine;
 		_app = app;
 		InitializeComponent();
-		_pages = new FrameworkElement[] { PageHome, PageBasic, PageTier, PagePreview, PageDevices };
+		_pages = new FrameworkElement[] { PageHome, PageBasic, PageTier, PagePreview, PageDevices, PageWorkshop };
 		TierGrid.ItemsSource = _tiers;
 		LoadFromConfig();
 		_tintSave.Tick += delegate
@@ -145,16 +147,22 @@ public partial class MainWindow : FluentWindow
 		{
 			_pages[i].Visibility = i == idx ? Visibility.Visible : Visibility.Collapsed;
 		}
-		int n = 0;
 		foreach (object child in Nav.Children)
 		{
 			if (child is Wpf.Ui.Controls.Button b)
 			{
-				b.Appearance = n == idx ? ControlAppearance.Secondary : ControlAppearance.Transparent;
-				n++;
+				b.Appearance = b.Tag?.ToString() == idx.ToString() ? ControlAppearance.Secondary : ControlAppearance.Transparent;
 			}
 		}
 		Header.Text = PageNames[idx];
+		// 创意工坊页面要尽量大：不要页面标题和底部的保存按钮
+		bool workshop = idx == 5;
+		Header.Visibility = workshop ? Visibility.Collapsed : Visibility.Visible;
+		Footer.Visibility = workshop ? Visibility.Collapsed : Visibility.Visible;
+		if (workshop)
+		{
+			EnsureWorkshop().Start();
+		}
 		if (idx == 3)
 		{
 			RefreshPreview();
@@ -322,6 +330,23 @@ public partial class MainWindow : FluentWindow
 		public CurrentWallpaper.Item Item;
 
 		public System.Windows.Media.Imaging.BitmapSource Image;
+
+		/// <summary>The preview file when it is a GIF (read into memory so the file is not kept open), else null.</summary>
+		public byte[] Gif;
+	}
+
+	private static byte[] ReadGif(string path)
+	{
+		try
+		{
+			return path != null && path.EndsWith(".gif", StringComparison.OrdinalIgnoreCase) && new System.IO.FileInfo(path).Length < 32 * 1024 * 1024
+				? System.IO.File.ReadAllBytes(path)
+				: null;
+		}
+		catch
+		{
+			return null;
+		}
 	}
 
 	/// <summary>Reads WE's current wallpapers on a worker thread; redraws only when they changed.</summary>
@@ -342,7 +367,7 @@ public partial class MainWindow : FluentWindow
 				sig = string.Join("|", items.Select(i => i.MonitorKey + "=" + i.Folder + "/" + i.Title));
 				if (force || sig != _nowSig)
 				{
-					entries = items.Select(i => new NowEntry { Item = i, Image = LoadThumb(i.PreviewPath, 600) }).ToList();
+					entries = items.Select(i => new NowEntry { Item = i, Image = LoadThumb(i.PreviewPath, 600), Gif = ReadGif(i.PreviewPath) }).ToList();
 				}
 			}
 			catch
@@ -387,7 +412,7 @@ public partial class MainWindow : FluentWindow
 	}
 
 	/// <summary>Rounded image (or a placeholder icon) that fills its slot.</summary>
-	private static FrameworkElement Thumb(System.Windows.Media.Imaging.BitmapSource img, double width, double height, double radius)
+	private static FrameworkElement Thumb(System.Windows.Media.Imaging.BitmapSource img, double width, double height, double radius, byte[] gif = null)
 	{
 		var border = new Border
 		{
@@ -403,6 +428,18 @@ public partial class MainWindow : FluentWindow
 		}
 		var image = new System.Windows.Controls.Image { Source = img, Stretch = System.Windows.Media.Stretch.UniformToFill };
 		System.Windows.Media.RenderOptions.SetBitmapScalingMode(image, System.Windows.Media.BitmapScalingMode.HighQuality);
+		if (gif != null)
+		{
+			// animated preview: the first frame (img) shows until the GIF is ready; frames are decoded as they play
+			try
+			{
+				XamlAnimatedGif.AnimationBehavior.SetRepeatBehavior(image, System.Windows.Media.Animation.RepeatBehavior.Forever);
+				XamlAnimatedGif.AnimationBehavior.SetSourceStream(image, new System.IO.MemoryStream(gif, writable: false));
+			}
+			catch
+			{
+			}
+		}
 		border.Child = image;
 		border.SizeChanged += delegate
 		{
@@ -426,7 +463,7 @@ public partial class MainWindow : FluentWindow
 		{
 			CurrentWallpaper.Item it = e.Item;
 			var card = new StackPanel { Width = 300, Margin = new Thickness(0, 0, 16, 8) };
-			FrameworkElement thumb = Thumb(e.Image, 300, 169, 6);
+			FrameworkElement thumb = Thumb(e.Image, 300, 169, 6, e.Gif);
 			thumb.Cursor = System.Windows.Input.Cursors.Hand;
 			thumb.ToolTip = "打开壁纸文件夹";
 			string folder = it.Folder;
@@ -457,13 +494,13 @@ public partial class MainWindow : FluentWindow
 			{
 				string id = it.Id;
 				var bShop = new Wpf.Ui.Controls.Button { Content = "创意工坊页面", Icon = new SymbolIcon { Symbol = SymbolRegular.Globe24 }, Padding = new Thickness(10, 4, 10, 4) };
-				bShop.Click += delegate { Open("steam://url/CommunityFilePage/" + id); };
+				bShop.Click += delegate { ShowWorkshopItem(id); };
 				buttons.Children.Add(bShop);
 			}
 			card.Children.Add(buttons);
 			NowPanel.Children.Add(card);
 
-			FrameworkElement small = Thumb(e.Image, double.NaN, entries.Count == 1 ? 110 : 56, 4);
+			FrameworkElement small = Thumb(e.Image, double.NaN, entries.Count == 1 ? 110 : 56, 4, e.Gif);
 			small.Margin = new Thickness(2, 0, 2, 0);
 			small.ToolTip = it.Monitor + "：" + it.Title;
 			SideThumbs.Children.Add(small);
@@ -477,6 +514,30 @@ public partial class MainWindow : FluentWindow
 	private void SideNow_Click(object sender, RoutedEventArgs e)
 	{
 		SelectPage(0);
+	}
+
+	// ---- workshop ----
+
+	private WorkshopView EnsureWorkshop()
+	{
+		if (_workshop == null)
+		{
+			_workshop = new WorkshopView(_engine);
+			_workshop.UnreadChanged += n => Dispatcher.BeginInvoke((Action)delegate
+			{
+				NavWorkshopBadge.Visibility = n > 0 ? Visibility.Visible : Visibility.Collapsed;
+				NavWorkshopCount.Text = n > 99 ? "99+" : n.ToString();
+			});
+			PageWorkshop.Child = _workshop;
+		}
+		return _workshop;
+	}
+
+	/// <summary>切到创意工坊页并打开某个壁纸的详情。</summary>
+	public void ShowWorkshopItem(string id)
+	{
+		SelectPage(5);
+		_workshop?.ShowItem(id);
 	}
 
 	// ---- devices ----
