@@ -1,5 +1,6 @@
 package com.tiger.steamwallpaper
 
+import androidx.compose.ui.draw.alpha
 import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -309,11 +310,8 @@ fun AccountSheet(open: Boolean, onDismiss: () -> Unit) {
                     Text("版本 v${BuildConfig.VERSION_NAME}", fontWeight = FontWeight.Medium)
                     Text("从 GitHub 检查新版本（启动时每 6 小时最多查一次）", fontSize = 13.sp)
                 }
-                if (updater.checking) {
-                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                } else {
-                    GlassButton("检查更新", onClick = { updater.check(manual = true) })
-                }
+                // 检查时按钮不换成转圈，只是变灰：这一行的高度和宽度都不变
+                GlassButton(if (updater.checking) "检查中…" else "检查更新", onClick = { updater.check(manual = true) }, enabled = !updater.checking)
             }
             // 字大时一行放不下：自动换行
             FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -344,11 +342,13 @@ private fun SubsStatus() {
         }
         GlassButton(if (ws.subsLoading) "读取中" else "刷新", onClick = { ws.loadRemoteSubs(force = true) }, enabled = !ws.subsLoading)
     }
-    ws.subsProgress?.let { p ->
-        LinearProgressIndicator(progress = { p }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
-        Text("在后台读，可以关掉这个面板；读完会提示。", fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
-    }
-    Text("Steam 网页可能不列出账号看不到的成人作品，这些只能在打开详情时核对。", fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+    // 进度条一直占着位置（不读时看不见），读的时候下面的内容不会被挤下去
+    val p = ws.subsProgress
+    LinearProgressIndicator(progress = { p ?: 0f }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp).alpha(if (p != null) 1f else 0f))
+    Text(
+        if (p != null) "在后台读，可以关掉这个面板；读完会提示。" else "Steam 网页可能不列出账号看不到的成人作品，这些只能在打开详情时核对。",
+        fontSize = 12.sp, minLines = 2, modifier = Modifier.padding(top = 4.dp),
+    )
 }
 
 /** 订阅账号（大号）：只负责订阅，比如看不了成人内容的大号；可以把它的关注导入浏览账号。 */
@@ -452,14 +452,21 @@ fun UpdateSheet(activity: Activity) {
             if (rel.notes.isNotBlank()) {
                 Text(rel.notes.trim(), fontSize = 14.sp, lineHeight = 21.sp, modifier = Modifier.padding(top = 10.dp))
             }
+            // 进度条和状态一直占着位置：开始下载时按钮不会被顶上去
             val p = updater.progress
-            if (p != null) {
-                LinearProgressIndicator(progress = { p }, modifier = Modifier.fillMaxWidth().padding(top = 16.dp))
-                Text("正在下载 ${(p * 100).roundToInt()}%", fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
-            }
-            if (updater.message.isNotEmpty()) {
-                Text(updater.message, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 10.dp))
-            }
+            var last by remember { mutableStateOf(0f) }
+            if (p != null) last = p
+            LinearProgressIndicator(progress = { last }, modifier = Modifier.fillMaxWidth().padding(top = 16.dp))
+            Text(
+                when {
+                    updater.message.isNotEmpty() -> updater.message
+                    p != null -> "正在下载 ${(p * 100).roundToInt()}%"
+                    else -> "点「下载并安装」后在这里显示进度"
+                },
+                fontSize = 13.sp, minLines = 2, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                color = if (updater.message.isNotEmpty()) MaterialTheme.colorScheme.primary else Color.Unspecified,
+                modifier = Modifier.padding(top = 6.dp),
+            )
             Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 GlassButton("下载并安装", onClick = { updater.download(activity) }, enabled = p == null, primary = true)
                 GlassButton("以后再说", onClick = { updater.skip() })

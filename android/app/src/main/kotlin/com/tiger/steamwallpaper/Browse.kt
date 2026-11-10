@@ -1,5 +1,7 @@
 package com.tiger.steamwallpaper
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -153,14 +155,14 @@ private fun FilterChipButton(onFilter: () -> Unit) {
 fun AuthorPage(s: AuthorScreen, onFilter: () -> Unit) {
     val v = s.view
     ItemGrid(v, header = {
-        // 字大时一行放不下：自动换行
-        androidx.compose.foundation.layout.FlowRow(
-            Modifier.padding(horizontal = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
-            itemVerticalAlignment = Alignment.CenterVertically,
+        // 固定一行，不换行（字大放不下时可以左右滑）
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
         ) {
             FollowButton(s.steamId)
             val only = ws.store.unsubscribedOnly
-            Pill("只看没订阅的", onClick = { ws.store.unsubscribedOnly = !only; ws.store.save() }, selected = only, leading = if (only) Icons.Default.Check else null)
+            Pill("只看未订阅", onClick = { ws.store.unsubscribedOnly = !only; ws.store.save() }, selected = only, leading = if (only) Icons.Default.Check else null)
             FilterChipButton(onFilter)
         }
     }, filter = true, unsubscribedOnly = ws.store.unsubscribedOnly)
