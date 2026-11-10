@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace WERandom;
@@ -38,6 +39,8 @@ public static class CurrentWallpaper
 
 	private static DateTime _cachedTime;
 
+	private static string _cachedActive;
+
 	private static List<Item> _cached = new List<Item>();
 
 	private static Dictionary<string, string> _monitorNames;
@@ -57,19 +60,32 @@ public static class CurrentWallpaper
 				return new List<Item>();
 			}
 			DateTime mtime = File.GetLastWriteTimeUtc(cfg);
+			HashSet<string> active = ActiveMonitors();
+			string activeKey = string.Join("|", active.OrderBy(x => x));
 			lock (Lock)
 			{
-				if (cfg == _cachedPath && mtime == _cachedTime)
+				if (cfg == _cachedPath && mtime == _cachedTime && activeKey == _cachedActive)
 				{
 					return _cached;
 				}
 			}
 			string text = ReadShared(cfg);
 			List<Item> items = Parse(text);
+			// WE keeps the wallpaper of every monitor it has ever seen; show only the ones connected now
+			// (keys are monitor device paths like //?/DISPLAY#DELA0F4#...#{guid})
+			if (active.Count > 0)
+			{
+				List<Item> shown = items.Where(i => !i.MonitorKey.StartsWith("//?/", StringComparison.Ordinal) || active.Contains(Normalize(i.MonitorKey))).ToList();
+				if (shown.Count > 0)
+				{
+					items = shown;
+				}
+			}
 			lock (Lock)
 			{
 				_cachedPath = cfg;
 				_cachedTime = mtime;
+				_cachedActive = activeKey;
 				_cached = items;
 			}
 			return items;
@@ -170,6 +186,72 @@ public static class CurrentWallpaper
 			list.Add(item);
 		}
 		return list;
+	}
+
+	[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+	private struct DisplayDevice
+	{
+		public int cb;
+
+		[MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+		public string DeviceName;
+
+		[MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
+		public string DeviceString;
+
+		public int StateFlags;
+
+		[MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
+		public string DeviceID;
+
+		[MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
+		public string DeviceKey;
+	}
+
+	[DllImport("user32.dll", CharSet = CharSet.Unicode)]
+	private static extern bool EnumDisplayDevices(string device, uint index, ref DisplayDevice dd, uint flags);
+
+	private const uint GetDeviceInterfaceName = 1;
+
+	private const int Active = 1;
+
+	/// <summary>Device paths of the monitors that are connected and in use now (same form as WE's keys). Empty when it fails.</summary>
+	private static HashSet<string> ActiveMonitors()
+	{
+		var set = new HashSet<string>();
+		try
+		{
+			for (uint a = 0; a < 32; a++)
+			{
+				var adapter = new DisplayDevice { cb = Marshal.SizeOf(typeof(DisplayDevice)) };
+				if (!EnumDisplayDevices(null, a, ref adapter, 0))
+				{
+					break;
+				}
+				for (uint m = 0; m < 16; m++)
+				{
+					var monitor = new DisplayDevice { cb = Marshal.SizeOf(typeof(DisplayDevice)) };
+					if (!EnumDisplayDevices(adapter.DeviceName, m, ref monitor, GetDeviceInterfaceName))
+					{
+						break;
+					}
+					if ((monitor.StateFlags & Active) != 0 && !string.IsNullOrEmpty(monitor.DeviceID))
+					{
+						set.Add(Normalize(monitor.DeviceID));
+					}
+				}
+			}
+		}
+		catch
+		{
+			set.Clear();
+		}
+		return set;
+	}
+
+	private static string Normalize(string path)
+	{
+		return path.Replace('\\', '/').ToLowerInvariant();
 	}
 
 	/// <summary>"//?/DISPLAY#AOCA611#5&amp;..." → friendly name from the monitor's EDID, or the maker code.</summary>
