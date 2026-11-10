@@ -1,5 +1,6 @@
 package com.tiger.steamwallpaper
 
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.background
@@ -97,7 +98,8 @@ private fun LazyGridScope.full(key: String, content: @Composable () -> Unit) {
 
 @Composable
 private fun Tile(it: Item, v: ListView, ids: List<String>) {
-    Column(Modifier.clip(RoundedCornerShape(14.dp)).clickable { ws.openDetail(it.id, ids, v) }) {
+    // 点击进详情，长按看大图（和时间线一样）
+    Column(Modifier.clip(RoundedCornerShape(14.dp)).combinedClickable(onLongClick = { LocalActions.lightbox(it.preview) }) { ws.openDetail(it.id, ids, v) }) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceVariant)) {
             PreviewImage(it.preview, animate = false, modifier = Modifier.fillMaxSize())
             TileBadges(it, timeline = false)
