@@ -82,6 +82,12 @@ a:hover { text-decoration: underline; }
 
 .bar { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; color: var(--fg2); flex-wrap: wrap; }
 .bar .grow { flex: 1; }
+/* segmented switch (creator page: all / not subscribed / subscribed) */
+.seg { display: inline-flex; border: 1px solid var(--ctlline); border-radius: 4px; overflow: hidden; flex-shrink: 0; }
+.seg button { border: 0; border-radius: 0; background: var(--ctl); padding: 4px 12px; }
+.seg button + button { border-left: 1px solid var(--ctlline); }
+.seg button.on { background: var(--accent); color: #000; font-weight: 600; }
+:root.light .seg button.on { color: #fff; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 14px 12px; }
 .tile { cursor: pointer; border-radius: 7px; padding: 5px; margin: -5px; }
 .tile:hover { background: var(--hover); }
@@ -364,6 +370,7 @@ async function loadSubs(force) {
     if (announce || failed) toast(`订阅列表读取完成：${all.size} 个` + (failed ? `，有 ${failed} 页没读到` : ''), failed ? 6000 : 3500);
     // redraw only the wallpapers whose state changed
     for (const id of new Set([...Object.keys(before), ...all])) if (!before[id] !== !S.subs.ids[id]) refreshTile(id);
+    if (current && current.kind === 'author' && (S.authorSub || 'all') !== 'all') renderList(true); else paintAuthorBar();
     if (selected && !before[selected] !== !S.subs.ids[selected]) { const it = items.get(selected), box = $('.dv .actions'); if (it && box) renderActions(box, it); }
   } catch (e) {
     subsError = '读取失败：' + errText(e);
@@ -388,6 +395,7 @@ async function checkSubscribed(id) {
     if (subState(id) !== before) {
       host.call('subsLog', { message: `壁纸 ${id} 的订阅状态按网页改为${r.on ? '已订阅' : '没订阅'}` }).catch(() => {});
       refreshTile(id);
+      paintAuthorBar();
       if (selected === id) { const it = items.get(id), box = $('.dv .actions'); if (it && box) renderActions(box, it); }
     }
   } catch (e) { }
@@ -830,6 +838,8 @@ function renderList(keepScroll) {
     const all = h('<button>全部标为已读</button>'); all.onclick = markAllRead;
     const re = h('<button class="ghost" title="重新加载">刷新</button>'); re.onclick = () => { views.timeline = null; openTab('timeline'); };
     bar.append(jump, all, re);
+  } else if (v.kind === 'author') {
+    bar.innerHTML = authorBarHtml(v);
   } else if (v.kind === 'browse') {
     bar.innerHTML = `<span>${v.search ? `搜索「${esc(v.search)}」` : '全部壁纸'}${v.total != null ? '，共 ' + num(v.total) + ' 个' : ''}</span>`;
     if (v.search) { const c = h('<a>清除搜索</a>'); c.onclick = () => { $('#search').value = ''; views.browse = null; openTab('browse'); }; bar.appendChild(c); }
@@ -837,7 +847,7 @@ function renderList(keepScroll) {
   main.appendChild(bar);
   const feed = v.kind === 'timeline';
   const grid = h(`<div class="${feed ? 'feed' : 'grid'}" id="grid"></div>`);
-  const shown = v.ids.map(id => items.get(id)).filter(it => v.kind !== 'author' || passesFilters(it));
+  const shown = v.ids.map(id => items.get(id)).filter(it => v.kind !== 'author' || (passesFilters(it) && passesSub(it)));
   grid.innerHTML = !feed ? shown.map(it => tileHtml(it, v)).join('')
     : S.mergePosts ? groupPosts(shown.map(it => it.id)).map(p => groupHtml(p, v)).join('')
     : shown.map(it => postHtml(it, v)).join('');
@@ -894,6 +904,25 @@ function bindTiles(grid) {
     t._ht = setTimeout(() => { if (it.preview) img.src = it.preview; }, 350);
     t.onmouseleave = () => { clearTimeout(t._ht); t._hover = false; img.src = img.dataset.small; };
   };
+}
+// creator page: show all works, only the ones not subscribed, or only the subscribed ones (S.authorSub: all / no / yes).
+// "subscribed" = subscribed by the account that subscribes (its list on Steam), or downloaded here, or just subscribed.
+// The counts are over the works loaded so far; with a filter on, scrolling keeps loading pages as usual.
+function passesSub(it) {
+  const f = S.authorSub || 'all';
+  return f === 'all' || (f === 'yes') === !!subState(it.id);
+}
+function authorBarHtml(v) {
+  const pool = v.ids.map(id => items.get(id)).filter(passesFilters);
+  const yes = pool.filter(it => subState(it.id)).length, f = S.authorSub || 'all';
+  const seg = [['all', '全部', pool.length], ['no', '没订阅', pool.length - yes], ['yes', '已订阅', yes]]
+    .map(([k, t, n]) => `<button data-subf="${k}" class="${f === k ? 'on' : ''}">${t} ${n}</button>`).join('');
+  const loaded = v.done ? '' : `已加载 ${v.ids.length}${v.total ? ' / ' + v.total : ''} 个，往下翻继续加载`;
+  return `<div class="seg" title="按订阅账号的订阅状态筛选">${seg}</div><span>${loaded}</span>`;
+}
+function paintAuthorBar() {
+  const v = current, bar = v && v.kind === 'author' ? $('#main .bar') : null;
+  if (bar) bar.innerHTML = authorBarHtml(v);
 }
 function renderAuthorHead(main, v) {
   const p = S.profiles[v.author] || {};
@@ -1055,6 +1084,7 @@ async function doSubscribe(it, on) {
     toast((on ? '订阅' : '取消订阅') + '失败' + who + '：' + ((e && e.message) || e) + hint, 8000);
   }
   refreshTile(it.id);
+  paintAuthorBar();
   if (selected === it.id) { const box = $('.dv .actions'); if (box) renderActions(box, it); }
 }
 // after (un)subscribing: redraw the badges of every picture of this wallpaper and the action bars in the posts
@@ -1170,6 +1200,7 @@ function applyTheme(theme, accent) {
   $('#main').addEventListener('scroll', () => { updateTop(); clearTimeout(posTimer); posTimer = setTimeout(savePosition, 500); }, { passive: true });
   window.addEventListener('resize', updateTop);
   document.addEventListener('click', e => {
+    const subf = e.target.closest('[data-subf]'); if (subf) { S.authorSub = subf.dataset.subf; save(); renderList(); return; }
     const more = e.target.closest('[data-cmore]'); if (more) { loadComments(more.dataset.cmore, true); return; }
     const who = e.target.closest('[data-cauthor]'); if (who) { openAuthor(who.dataset.cauthor); return; }
     const cmt = e.target.closest('[data-cmt]'); if (cmt) toggleComments(cmt);
