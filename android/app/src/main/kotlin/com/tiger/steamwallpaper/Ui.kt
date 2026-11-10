@@ -1,5 +1,6 @@
 package com.tiger.steamwallpaper
 
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.draw.drawBehind
 import android.content.Context
 import android.content.Intent
@@ -200,7 +201,7 @@ private val Ratios = HashMap<String, Float>()
 
 /** 整张图按自己的比例显示（不裁成方形），最高 [maxHeight]，居中。 */
 @Composable
-fun BigPicture(url: String, modifier: Modifier = Modifier, maxHeight: Dp = 480.dp, inner: Modifier = Modifier, onClick: () -> Unit) {
+fun BigPicture(url: String, modifier: Modifier = Modifier, maxHeight: Dp = 480.dp, inner: Modifier = Modifier, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
     // 宽高比读到一次就记住（滑出屏幕再回来、在详情里再打开都不用重新撑开）；还不知道时按方形占位，预览图大多是方的
     var ratio by remember(url) { mutableStateOf<Float?>(Ratios[url] ?: 1f) }
     BoxWithConstraints(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -222,7 +223,7 @@ fun BigPicture(url: String, modifier: Modifier = Modifier, maxHeight: Dp = 480.d
         }
         Box(
             Modifier.size(w, h).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceVariant)
-                .then(inner).clickable(onClick = onClick),
+                .then(inner).combinedClickable(onLongClick = onLongClick, onClick = onClick),
         ) {
             PreviewImage(url, animate = true, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit, onRatio = {
                 val r = it.coerceIn(0.4f, 3f)

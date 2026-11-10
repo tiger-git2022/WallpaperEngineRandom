@@ -1,5 +1,6 @@
 package com.tiger.steamwallpaper
 
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DoneAll
@@ -237,7 +238,8 @@ private fun GroupPost(post: Post) {
                                 Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(10.dp))
                                     .background(MaterialTheme.colorScheme.surfaceVariant)
                                     .trackSeen(item.id, ws.isNew(item))
-                                    .clickable { ws.openDetail(item.id, ids) },
+                                    // 点击进详情，长按看大图
+                                    .combinedClickable(onLongClick = { LocalActions.lightbox(item.preview) }) { ws.openDetail(item.id, ids) },
                             ) {
                                 PreviewImage(item.preview, animate = true, modifier = Modifier.fillMaxSize())
                                 TileBadges(item, timeline = true)
@@ -283,7 +285,8 @@ fun WallpaperBody(it: Item, track: Boolean) {
     }
     Spacer(Modifier.height(10.dp))
     var cur by remember(it.id) { mutableStateOf(it.preview) }
-    BigPicture(cur, inner = Modifier.trackSeen(it.id, track && ws.isNew(it))) { LocalActions.lightbox(cur) }
+    // 和多张的一样：点击进详情，长按看大图
+    BigPicture(cur, inner = Modifier.trackSeen(it.id, track && ws.isNew(it)), onLongClick = { LocalActions.lightbox(cur) }) { ws.openDetail(it.id) }
     if (it.images.isNotEmpty() || it.videos.isNotEmpty()) {
         PreviewStrip(it, cur) { url -> cur = url }
     }
