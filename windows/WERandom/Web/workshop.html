@@ -284,13 +284,8 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .dt:hover { background: var(--hover); }
 .dt .thumb img { object-fit: contain; cursor: zoom-in; }
 .dt .t { margin-top: 6px; font-weight: 600; white-space: normal; overflow-wrap: anywhere; line-height: 1.35; }
-/* marked "取消这个" */
-.dt.cancel { outline: 2px solid var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
-.dt.cancel .thumb img { opacity: .55; }
 .dt .acts button.mark { flex: 1; }
-.dt.cancel .acts button.mark { border-color: var(--danger); color: var(--danger); }
-.dg .gh button.danger { background: var(--danger); border-color: transparent; color: #000; font-weight: 600; }
-:root.light .dg .gh button.danger { color: #fff; }
+
 .dt .s { color: var(--fg3); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dt .s a { color: var(--fg2); }
 .where { display: flex; flex-wrap: wrap; gap: 4px; margin: 5px 0; }
@@ -1417,7 +1412,7 @@ function toggleComments(a) {
 // Tablet / phone libraries (patched WE app, <id>.mpkg) are read over adb; wallpapers that are only there get their
 // cover from Steam. "保留这个": unsubscribe the others (subscribing account), move them on the devices to wer_trash,
 // and put the kept one on that device's "to send with WE" list.
-const dupe = { marked: new Set(), applied: null, data: null, loading: false, text: '', error: null, devices: null, devError: null, removed: new Set(), shown: 20, groups: [] };
+const dupe = { applied: null, data: null, loading: false, text: '', error: null, devices: null, devError: null, removed: new Set(), shown: 20, groups: [] };
 function dcfg() { return S.dupe = Object.assign({ min: 0.75, addrs: [], ignore: [], send: {}, onlyDevice: false }, S.dupe || {}); }
 const pairKey = (a, b) => a < b ? a + '|' + b : b + '|' + a;
 const onDevices = id => (dupe.devices || []).filter(d => d.ids.includes(id));
@@ -1528,9 +1523,7 @@ function renderDupes(keepScroll) {
   if (keepScroll) main.scrollTop = top;
 }
 function groupDupeHtml(g, gi) {
-  const n = g.filter(x => dupe.marked.has(x.id)).length, all = n === g.length;
-  const go = n ? `<button class="danger" data-dgo="${gi}"${all ? ' disabled title="至少要留一个"' : ''}>${all ? '至少要留一个' : `取消选中的 ${n} 个`}</button>` : '';
-  return `<div class="dg" data-g="${gi}"><div class="gh"><span>${g.length} 个相似，最像的两个 ${Math.round(g.score / 10)}%${n ? `，选了 ${n} 个要取消` : '，点「取消这个」选出不要的'}</span><span class="grow"></span>${go}<a data-dnot="${gi}" title="这一组以后不再提示">这组不是重复</a></div>
+  return `<div class="dg" data-g="${gi}"><div class="gh"><span>${g.length} 个相似，最像的两个 ${Math.round(g.score / 10)}%，不要的点「取消这个」</span><span class="grow"></span><a data-dnot="${gi}" title="这一组以后不再提示">这组不是重复</a></div>
     <div class="dgrid">${g.map(it => dupeTileHtml(it, gi, g)).join('')}</div></div>`;
 }
 function dupeTileHtml(it, gi, g) {
@@ -1541,12 +1534,11 @@ function dupeTileHtml(it, gi, g) {
   const info = [it.type ? (LABEL[it.type[0].toUpperCase() + it.type.slice(1).toLowerCase()] || it.type) : '', it.bytes ? size(it.bytes) : '', it.added ? '下载于 ' + date(it.added) : ''].filter(Boolean).join(' · ');
   const by = s.creator ? `<a data-works="${s.creator}" data-author="${s.creator}">${esc(p.n || '作者')}</a>${s.created ? ' · 发布于 ' + date(s.created) : ''}` : (s.created ? '发布于 ' + date(s.created) : '');
   const here = installed.has(it.id), on = dupe.applied === it.id;
-  const marked = dupe.marked.has(it.id);
-  return `<div class="dt${on ? ' applied' : ''}${marked ? ' cancel' : ''}" data-id="${it.id}"><div class="thumb"><img loading="lazy" src="${esc(it.img)}" alt="" data-dzoom></div>
+  return `<div class="dt${on ? ' applied' : ''}" data-id="${it.id}"><div class="thumb"><img loading="lazy" src="${esc(it.img)}" alt="" data-dzoom></div>
     <div class="t" title="${esc(dupeTitle(it))}">${esc(dupeTitle(it))}</div>
     <div class="s">${by || '&nbsp;'}</div><div class="s">${info || '&nbsp;'}</div>
     <div class="where">${where}</div>
-    <div class="acts"><button data-dapply="${it.id}" class="${on ? 'on' : ''}"${here ? ' title="放到电脑桌面上看效果，再点同组的另一个来对比"' : ' disabled title="这台电脑上没有，没法应用"'}>${on ? '✓ 桌面上' : '应用'}</button><button class="mark" data-dmark="${it.id}" title="选出这组里不要的，可以选几个；选好后点组标题旁的「取消选中的」">${marked ? '✓ 要取消（再点撤销）' : '取消这个'}</button></div>
+    <div class="acts"><button data-dapply="${it.id}" class="${on ? 'on' : ''}"${here ? ' title="放到电脑桌面上看效果，再点同组的另一个来对比"' : ' disabled title="这台电脑上没有，没法应用"'}>${on ? '✓ 桌面上' : '应用'}</button><button class="mark" data-dcancel="${gi}|${it.id}" title="取消订阅这个，从平板 / 手机挪走；这组其余的保留">取消这个</button></div>
     <div class="links"><a data-ddetail="${it.id}">详情</a><a data-dout="${gi}|${it.id}" title="它和这组的其他壁纸不是同一个">移出这组</a></div></div>`;
 }
 function ask(html, okText) {
@@ -1556,10 +1548,10 @@ function ask(html, okText) {
     box.onclick = e => { const y = e.target.closest('[data-yes]'), n = e.target.closest('[data-no]'); if (y || n || e.target === box) { box.classList.remove('on'); res(!!y); } };
   });
 }
-// cancel the marked wallpapers of a group, keep the rest
-async function cancelDupes(gi) {
+// "取消这个": cancel that wallpaper right away (no confirmation), keep the rest of its group
+async function cancelDupes(gi, cancelId) {
   const g = dupe.groups[gi]; if (!g) return;
-  const others = g.filter(x => dupe.marked.has(x.id)), kept = g.filter(x => !dupe.marked.has(x.id)), c = dcfg();
+  const others = g.filter(x => x.id === cancelId), kept = g.filter(x => x.id !== cancelId), c = dcfg();
   if (!others.length || !kept.length) return;
   const unsub = others.filter(x => subState(x.id) || onSteam(x.id));
   const trash = (dupe.devices || []).map(d => ({ d, ids: others.filter(x => d.ids.includes(x.id)).map(x => x.id) })).filter(x => x.ids.length);
@@ -1572,8 +1564,7 @@ async function cancelDupes(gi) {
     ...trash.map(x => `<li>从 ${esc(x.d.model)} 挪走 ${x.ids.map(id => name(others.find(o => o.id === id))).join('、')}（挪到 wer_trash 文件夹，可以挪回来）</li>`),
     ...send.map(d => `<li>把 ${name(keep)} 加到「要发到 ${esc(d.model)}」的列表，你再用 Wallpaper Engine 发过去</li>`)
   ];
-  if (!lines.length) { for (const x of others) { dupe.removed.add(x.id); dupe.marked.delete(x.id); } renderDupes(true); toast('选中的已经都不在电脑和设备上了'); return; }
-  if (!await ask(`<h3>取消 ${others.length} 个，保留 ${kept.map(name).join('、')}</h3>接下来会：<ul>${lines.join('')}</ul>`, '确定')) return;
+  if (!lines.length) { for (const x of others) dupe.removed.add(x.id); renderDupes(true); toast('它已经不在电脑和设备上了'); return; }
   let failed = 0;
   for (const x of unsub) if (!await doSubscribe(items.get(x.id) || { id: x.id, title: dupeTitle(x) }, false)) failed++;
   for (const t of trash) {
@@ -1583,9 +1574,10 @@ async function cancelDupes(gi) {
     } catch (e) { failed += t.ids.length; toast('从 ' + t.d.model + ' 挪走失败：' + errText(e), 6000); }
   }
   for (const d of send) { const l = c.send[d.model] || (c.send[d.model] = []); if (!l.includes(keepId)) l.push(keepId); }
-  for (const x of others) { dupe.marked.delete(x.id); if (!onDevices(x.id).length && !(installed.has(x.id) && !unsubscribed.has(x.id))) dupe.removed.add(x.id); }
+  for (const x of others) { if (!onDevices(x.id).length && !(installed.has(x.id) && !unsubscribed.has(x.id))) dupe.removed.add(x.id); }
   save(); renderDupes(true);
-  toast(failed ? `有 ${failed} 项没做成，详见上面的提示` : `已取消 ${others.length} 个` + (send.length ? '，记得用 Wallpaper Engine 把保留的发到设备上' : ''), 6000);
+  const did = [unsub.length ? '取消订阅' : '', trash.length ? '从' + trash.map(x => x.d.model).join('、') + '挪走' : '', send.length ? '把「' + dupeTitle(keep) + '」加到要发到设备的列表' : ''].filter(Boolean).join('，');
+  toast(failed ? `有 ${failed} 项没做成，详见上面的提示` : `已取消「${dupeTitle(others[0])}」：${did}`, 6000);
 }
 document.addEventListener('click', async e => {
   if (S.tab !== 'dupes' || current) return;
@@ -1601,8 +1593,7 @@ document.addEventListener('click', async e => {
     catch (err) { toast('应用失败：' + errText(err), 6000); }
     renderDupes(true); return;
   }
-  const mark = t.closest('[data-dmark]'); if (mark) { const id = mark.dataset.dmark; if (dupe.marked.has(id)) dupe.marked.delete(id); else dupe.marked.add(id); renderDupes(true); return; }
-  const go = t.closest('[data-dgo]'); if (go) { cancelDupes(+go.dataset.dgo); return; }
+  const cx = t.closest('[data-dcancel]'); if (cx) { const [gi, id] = cx.dataset.dcancel.split('|'); cx.disabled = true; cx.innerHTML = '<span class="spin"></span>'; cancelDupes(+gi, id); return; }
   const det = t.closest('[data-ddetail]'); if (det) { select(det.dataset.ddetail); return; }
   const out = t.closest('[data-dout]');
   if (out) { const [gi, id] = out.dataset.dout.split('|'); const g = dupe.groups[+gi]; const c = dcfg(); for (const x of g) if (x.id !== id) c.ignore.push(pairKey(id, x.id)); save(); renderDupes(true); return; }
