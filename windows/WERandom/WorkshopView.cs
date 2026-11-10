@@ -24,6 +24,14 @@ public sealed class WorkshopView : Grid
 
 	private static SteamWorkshop _steam;
 
+	private static SteamWorkshop _sub;
+
+	/// <summary>订阅账号的 WebView2 配置文件名（cookie 和浏览账号的默认配置文件分开存）。</summary>
+	private const string SubProfile = "subscribe";
+
+	/// <summary>看不见的 WebView2，用订阅账号的配置文件，只用来读写它的 cookie。</summary>
+	private WebView2 _subWeb;
+
 	private readonly Engine _engine;
 
 	private readonly WebView2 _web;
@@ -39,10 +47,19 @@ public sealed class WorkshopView : Grid
 	/// <summary>时间线里还没看过的数量（页面告诉我们的），给导航栏显示。</summary>
 	public event Action<int> UnreadChanged;
 
+	/// <summary>浏览账号：时间线、浏览、作者页、关注。</summary>
 	public static SteamWorkshop Steam(Engine engine)
 	{
 		return _steam ??= new SteamWorkshop(engine.Dir, engine.Log);
 	}
+
+	/// <summary>订阅账号：只负责订阅（比如 Steam 客户端里用的、看不到部分内容的大号）；没登录时订阅用浏览账号。</summary>
+	public static SteamWorkshop Sub(Engine engine)
+	{
+		return _sub ??= new SteamWorkshop(engine.Dir, engine.Log, "订阅账号");
+	}
+
+	private SteamWorkshop Subscriber => Sub(_engine).LoggedIn ? Sub(_engine) : Steam(_engine);
 
 	private string StatePath => Path.Combine(_engine.Dir, "we_random.workshop.json");
 
@@ -110,6 +127,7 @@ public sealed class WorkshopView : Grid
 			steam.AuthChanged += OnAuthChanged;
 			Unloaded += delegate { steam.AuthChanged -= OnAuthChanged; };
 			await steam.SyncCookiesAsync(core);
+			await StartSubAsync(env);
 			core.Navigate(Host + "workshop.html?theme=" + (Dark() ? "dark" : "light") + "&accent=" + Uri.EscapeDataString(AccentHex()));
 		}
 		catch (Exception ex)
@@ -118,6 +136,35 @@ public sealed class WorkshopView : Grid
 			_message.Text = "创意工坊页面打不开：" + ex.Message + "\n\n需要 Microsoft Edge WebView2 运行时（Windows 11 自带；Windows 10 可到微软官网下载安装）。";
 		}
 	}
+
+	/// <summary>订阅账号的看不见的 WebView2；失败时不影响页面，只是不能用订阅账号。</summary>
+	private async Task StartSubAsync(CoreWebView2Environment env)
+	{
+		try
+		{
+			_subWeb = new WebView2 { Visibility = Visibility.Hidden, Width = 1, Height = 1, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
+			Children.Add(_subWeb);
+			await _subWeb.EnsureCoreWebView2Async(env, SubOptions(env));
+			SteamWorkshop sub = Sub(_engine);
+			sub.AuthChanged += OnAuthChanged;
+			Unloaded += delegate { sub.AuthChanged -= OnAuthChanged; };
+			await sub.SyncCookiesAsync(_subWeb.CoreWebView2);
+		}
+		catch (Exception ex)
+		{
+			_engine.Log.Log("创意工坊：订阅账号初始化失败：" + ex.Message);
+			_subWeb = null;
+		}
+	}
+
+	private static CoreWebView2ControllerOptions SubOptions(CoreWebView2Environment env)
+	{
+		CoreWebView2ControllerOptions o = env.CreateCoreWebView2ControllerOptions();
+		o.ProfileName = SubProfile;
+		return o;
+	}
+
+	private CoreWebView2 SubCore => _subWeb?.CoreWebView2 ?? throw new SteamException(0, "订阅账号用不了（WebView2 初始化失败，详见日志）");
 
 	private static bool Dark()
 	{
@@ -248,14 +295,30 @@ public sealed class WorkshopView : Grid
 		{
 		case "status":
 			await steam.SyncCookiesAsync(core);
+			if (_subWeb?.CoreWebView2 != null)
+			{
+				await Sub(_engine).SyncCookiesAsync(_subWeb.CoreWebView2);
+			}
 			return await StatusJson(steam);
 		case "login":
-			await ShowLoginAsync(steam);
+			await ShowLoginAsync(steam, false);
 			await steam.SyncCookiesAsync(core);
 			return await StatusJson(steam);
 		case "logout":
 			await steam.LogoutAsync(core);
 			return await StatusJson(steam);
+		case "subLogin":
+		{
+			CoreWebView2 subCore = SubCore;
+			await ShowLoginAsync(Sub(_engine), true);
+			await Sub(_engine).SyncCookiesAsync(subCore);
+			return await StatusJson(steam);
+		}
+		case "subLogout":
+			await Sub(_engine).LogoutAsync(SubCore);
+			return await StatusJson(steam);
+		case "subFollowing":
+			return Json.Write(await Sub(_engine).FollowingAsync(), pretty: false);
 		case "query":
 			return await steam.QueryAsync(args.Obj("input") ?? new JObj());
 		case "details":
@@ -297,9 +360,20 @@ public sealed class WorkshopView : Grid
 		}
 		case "subscribe":
 		{
-			bool ok = await steam.SubscribeAsync(args.Str("id"), args.Bool("on"));
-			_engine.Log.Log("创意工坊：" + (args.Bool("on") ? "订阅 " : "取消订阅 ") + args.Str("id") + (ok ? "" : "（Steam 未确认）"));
-			return ok ? "true" : "false";
+			// 订阅账号登录了就用它订阅（Steam 客户端下载的是它的订阅），没登录时用浏览账号
+			SteamWorkshop who = Subscriber;
+			string what = (args.Bool("on") ? "订阅 " : "取消订阅 ") + args.Str("id") + "（" + who.Label + " " + who.SteamId + "）";
+			try
+			{
+				await who.SubscribeAsync(args.Str("id"), args.Bool("on"));
+			}
+			catch (Exception ex)
+			{
+				_engine.Log.Log("创意工坊：" + what + " 失败：" + ex.Message);
+				throw;
+			}
+			_engine.Log.Log("创意工坊：" + what);
+			return "true";
 		}
 		case "follow":
 		{
@@ -348,6 +422,18 @@ public sealed class WorkshopView : Grid
 			o["name"] = p.Name;
 			o["avatar"] = p.Avatar;
 		}
+		SteamWorkshop sub = Sub(_engine);
+		var so = new JObj();
+		so["available"] = _subWeb?.CoreWebView2 != null;
+		so["loggedIn"] = sub.LoggedIn;
+		so["steamid"] = sub.SteamId;
+		if (sub.LoggedIn)
+		{
+			SteamWorkshop.Profile sp = await steam.ProfileAsync(sub.SteamId);
+			so["name"] = sp.Name;
+			so["avatar"] = sp.Avatar;
+		}
+		o["sub"] = so;
 		ClientAccount(out string clientId, out string clientName);
 		o["clientSteamid"] = clientId;
 		o["clientName"] = clientName;
@@ -425,8 +511,11 @@ public sealed class WorkshopView : Grid
 
 	// ---- login window ----
 
-	/// <summary>弹出一个窗口显示 Steam 官方登录页，用户自己登录（账号密码、手机令牌、扫码都在 Steam 页面里完成），登录成功后自动关闭。</summary>
-	private async Task ShowLoginAsync(SteamWorkshop steam)
+	/// <summary>
+	/// 弹出一个窗口显示 Steam 官方登录页，用户自己登录（账号密码、手机令牌、扫码都在 Steam 页面里完成），登录成功后自动关闭。
+	/// sub：登录订阅账号（WebView2 用订阅账号的配置文件）。
+	/// </summary>
+	private async Task ShowLoginAsync(SteamWorkshop steam, bool sub)
 	{
 		// we are inside the page's WebMessageReceived callback; WebView2 must not create another WebView or run a
 		// nested modal loop from there (that aborts with E_ABORT), so leave the callback and use a modeless window
@@ -435,7 +524,7 @@ public sealed class WorkshopView : Grid
 		var web = new WebView2();
 		var win = new Window
 		{
-			Title = "登录 Steam（请登录 Steam 客户端里用的账号）",
+			Title = sub ? "登录订阅账号（请登录 Steam 客户端里用的账号）" : "登录浏览账号（看时间线、浏览、关注用的账号）",
 			Width = 560,
 			Height = 760,
 			WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -463,7 +552,14 @@ public sealed class WorkshopView : Grid
 		{
 			try
 			{
-				await web.EnsureCoreWebView2Async(env);
+				if (sub)
+				{
+					await web.EnsureCoreWebView2Async(env, SubOptions(env));
+				}
+				else
+				{
+					await web.EnsureCoreWebView2Async(env);
+				}
 				web.CoreWebView2.NewWindowRequested += (s, e) =>
 				{
 					e.Handled = true;
