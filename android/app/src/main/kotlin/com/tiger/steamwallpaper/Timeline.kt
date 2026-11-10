@@ -252,10 +252,10 @@ private fun GroupPost(post: Post) {
                 }
             }
         }
-        HorizontalDivider(Modifier.padding(top = 10.dp))
+        HorizontalDivider(Modifier.padding(top = 10.dp, bottom = 8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("点一张图查看，可以左右滑动切换", fontSize = 13.sp, modifier = Modifier.weight(1f))
-            TextButton(onClick = { ws.openAuthor(post.creator) }) { Text("作者的全部作品") }
+            Text("点一张图查看，可以左右滑动切换", fontSize = 13.sp, modifier = Modifier.weight(1f).padding(end = 8.dp))
+            Pill("作者的全部作品", onClick = { ws.openAuthor(post.creator) })
         }
     }
 }
@@ -299,10 +299,13 @@ fun WallpaperBody(it: Item, track: Boolean) {
     ).joinToString(" · ")
     Text(nums, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
     HorizontalDivider(Modifier.padding(top = 10.dp))
-    FlowRow(Modifier.fillMaxWidth().padding(top = 6.dp), verticalArrangement = Arrangement.Center, itemVerticalAlignment = Alignment.CenterVertically) {
+    FlowRow(
+        Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
+        itemVerticalAlignment = Alignment.CenterVertically,
+    ) {
         SubscribeRow(it)
-        TextButton(onClick = { ws.openAuthor(it.creator) }) { Text("作者的全部作品") }
-        TextButton(onClick = { ws.openDetail(it.id) }) { Text("详情和评论") }
+        Pill("作者的全部作品", onClick = { ws.openAuthor(it.creator) })
+        Pill("详情和评论", onClick = { ws.openDetail(it.id) })
     }
 }
 
