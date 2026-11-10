@@ -103,7 +103,8 @@ fun DetailSheet() {
                     }
                 }
                 Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                    repeat(list.size) { i ->
+                    // 小圆点只在 10 个以内时画（作者页可能有几百个）
+                    if (list.size <= 10) repeat(list.size) { i ->
                         val on = i == pager.currentPage
                         Box(
                             Modifier.padding(horizontal = 3.dp).size(if (on) 8.dp else 6.dp).clip(CircleShape)
