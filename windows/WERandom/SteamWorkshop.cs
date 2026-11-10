@@ -37,7 +37,10 @@ public sealed class SteamWorkshop
 
 	private CoreWebView2Environment _env;
 
-	private Task<CoreWebView2Environment> _envTask;
+	private static Task<CoreWebView2Environment> _envTask;
+
+	/// <summary>日志里用的名字：「浏览账号」或「订阅账号」。</summary>
+	public string Label { get; }
 
 	/// <summary>steamcommunity.com 的 cookie（名字 → 值），从 WebView2 复制过来。</summary>
 	private Dictionary<string, string> _cookies = new Dictionary<string, string>();
@@ -65,10 +68,11 @@ public sealed class SteamWorkshop
 		public string Avatar = "";
 	}
 
-	public SteamWorkshop(string dataDir, Logger log)
+	public SteamWorkshop(string dataDir, Logger log, string label = "浏览账号")
 	{
 		_dataDir = dataDir;
 		_log = log;
+		Label = label;
 		var handler = new HttpClientHandler { UseCookies = false, AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate };
 		_http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30) };
 		_http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36");
@@ -82,7 +86,10 @@ public sealed class SteamWorkshop
 		}
 	}
 
-	/// <summary>所有 WebView2 共用一个环境，cookie（登录状态）存在程序文件夹的 webview2 子文件夹里。</summary>
+	/// <summary>
+	/// 所有 WebView2 共用一个环境，cookie（登录状态）存在程序文件夹的 webview2 子文件夹里。
+	/// 浏览账号用默认配置文件，订阅账号用另一个配置文件（见 WorkshopView），两个号的登录互不覆盖。
+	/// </summary>
 	public Task<CoreWebView2Environment> GetEnvironmentAsync()
 	{
 		if (_envTask == null)
@@ -138,7 +145,7 @@ public sealed class SteamWorkshop
 		{
 			SteamId = id;
 			_token = null;
-			_log.Log(id.Length > 0 ? ("创意工坊：已登录 Steam " + id) : "创意工坊：未登录 Steam");
+			_log.Log("创意工坊：" + Label + (id.Length > 0 ? " 已登录 Steam " + id : " 未登录 Steam"));
 			AuthChanged?.Invoke();
 		}
 	}
@@ -382,19 +389,78 @@ public sealed class SteamWorkshop
 		return ids;
 	}
 
-	public async Task<bool> SubscribeAsync(string id, bool on)
+	/// <summary>订阅 / 取消订阅；Steam 没确认时抛出 SteamException，消息是中文的原因（Status 是 Steam 的结果码）。</summary>
+	public async Task SubscribeAsync(string id, bool on)
 	{
 		if (!Regex.IsMatch(id ?? "", "^\\d{1,20}$"))
 		{
 			throw new SteamException(400, "壁纸 ID 不对");
 		}
-		string text = await PostCommunityAsync(Community + "/sharedfiles/" + (on ? "subscribe" : "unsubscribe"), new Dictionary<string, string>
+		string text;
+		try
 		{
-			["id"] = id,
-			["appid"] = AppId,
-			["sessionid"] = SessionId
-		});
-		return SuccessOf(text);
+			text = await PostCommunityAsync(Community + "/sharedfiles/" + (on ? "subscribe" : "unsubscribe"), new Dictionary<string, string>
+			{
+				["id"] = id,
+				["appid"] = AppId,
+				["sessionid"] = SessionId
+			});
+		}
+		catch (SteamException ex) when (ex.Status == 401 || ex.Status == 403)
+		{
+			throw new SteamException(ex.Status, "登录过期了（Steam 返回 " + ex.Status + "），请重新登录");
+		}
+		if (SuccessOf(text))
+		{
+			return;
+		}
+		object code = null;
+		try
+		{
+			code = Json.ParseObj(text)["success"];
+		}
+		catch
+		{
+		}
+		string brief = Regex.Replace(text.Length > 200 ? text.Substring(0, 200) : text, "\\s+", " ");
+		_log.Log("创意工坊：" + Label + (on ? "订阅 " : "取消订阅 ") + id + " 没成功：" + brief);
+		throw new SteamException(code is double d ? (int)d : 0, ResultText(code, text));
+	}
+
+	/// <summary>Steam 的 EResult 结果码（常见的几个）和返回网页（没登录时是登录页）翻成中文。</summary>
+	private static string ResultText(object code, string text)
+	{
+		if (code is double d)
+		{
+			int c = (int)d;
+			switch (c)
+			{
+			case 2:
+				return "Steam 出错（结果码 2），稍后再试";
+			case 8:
+				return "参数不对（结果码 8）";
+			case 9:
+				return "找不到这个壁纸（结果码 9）：可能已被删除、设为私密，或这个号看不到它";
+			case 15:
+				return "没有权限（结果码 15）：可能是登录过期，或这个号不能订阅它";
+			case 16:
+			case 20:
+				return "Steam 超时或忙（结果码 " + c + "），稍后再试";
+			case 21:
+				return "账号没有登录（结果码 21），请重新登录";
+			case 25:
+				return "订阅数到上限了（结果码 25）";
+			case 84:
+				return "操作太频繁（结果码 84），过一会再试";
+			default:
+				return "Steam 返回结果码 " + c;
+			}
+		}
+		if (code == null && (text.TrimStart().StartsWith("<") || text.IndexOf("login", StringComparison.OrdinalIgnoreCase) >= 0))
+		{
+			return "登录过期了，请重新登录";
+		}
+		return "Steam 没有确认";
 	}
 
 	public async Task<bool> FollowAsync(string steamId, bool on)
