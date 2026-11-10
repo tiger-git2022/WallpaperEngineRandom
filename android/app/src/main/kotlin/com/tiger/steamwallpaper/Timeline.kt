@@ -226,7 +226,8 @@ private fun GroupPost(post: Post) {
         val last = post.items.last()
         PostHeader(post.creator, ago(first.created) + if (first.created - last.created > 600) " ~ " + ago(last.created) else "")
         Text(buildString { append("发布了 "); append(post.items.size); append(" 个新壁纸") }, modifier = Modifier.padding(bottom = 8.dp))
-        val cols = if (post.items.size == 2 || post.items.size == 4) 2 else 3
+        // 一律两列：3 个时上面两张、下面一张，每张和 4 个时一样大（三列时反而更小）
+        val cols = 2
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             post.items.chunked(cols).forEach { row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -253,8 +254,8 @@ private fun GroupPost(post: Post) {
             }
         }
         HorizontalDivider(Modifier.padding(top = 10.dp, bottom = 8.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("点一张图查看，可以左右滑动切换", fontSize = 13.sp, modifier = Modifier.weight(1f).padding(end = 8.dp))
+        // 点图打开详情，详情顶上写着可以左右滑动；这里只留按钮
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
             GlassButton("作者的全部作品", onClick = { ws.openAuthor(post.creator) })
         }
     }
