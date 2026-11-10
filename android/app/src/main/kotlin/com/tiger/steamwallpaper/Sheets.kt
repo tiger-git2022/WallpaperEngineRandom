@@ -1,5 +1,6 @@
 package com.tiger.steamwallpaper
 
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.draw.alpha
 import android.app.Activity
 import androidx.activity.compose.BackHandler
@@ -92,15 +93,24 @@ fun DetailSheet() {
         shown = id
         list = ws.detailList
     }
+    val src = ws.detailSource
+    val more = src != null && !src.done
     GlassSheet(visible = id != null, onDismiss = { ws.detail = null }, maxHeight = 0.92f) { scroll ->
-        if (list.size > 1) {
-            // 合并显示的一组：左右滑动切换
-            key(list) {
+        if (list.size > 1 || more) {
+            // 一组作品：左右滑动切换；从作者页 / 浏览工坊打开时，滑到最后会接着加载下一页
+            key(ws.detailSession) {
                 val pager = rememberPagerState(initialPage = list.indexOf(shown).coerceAtLeast(0)) { list.size }
+                val current by rememberUpdatedState(list)
                 LaunchedEffect(pager) {
                     snapshotFlow { pager.settledPage }.collect { p ->
-                        val cur = list.getOrNull(p) ?: return@collect
-                        if (ws.detail != null && ws.detail != cur) ws.openDetail(cur, list)
+                        val cur = current.getOrNull(p) ?: return@collect
+                        if (ws.detail != null && ws.detail != cur) ws.showDetail(cur)
+                    }
+                }
+                if (src != null) {
+                    LaunchedEffect(pager, src) {
+                        snapshotFlow { pager.currentPage >= current.size - 3 && !src.loading && !src.done && src.error == null }
+                            .collect { if (it) ws.loadMore(src) }
                     }
                 }
                 Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
@@ -112,7 +122,12 @@ fun DetailSheet() {
                                 .background(MaterialTheme.colorScheme.onSurface.copy(alpha = if (on) 0.9f else 0.3f)),
                         )
                     }
-                    Text("  ${pager.currentPage + 1} / ${list.size}，左右滑动切换", fontSize = 12.sp)
+                    val tail = when {
+                        src?.loading == true -> "+，正在加载更多"
+                        more -> "+"
+                        else -> ""
+                    }
+                    Text("  ${pager.currentPage + 1} / ${list.size}$tail，左右滑动切换", fontSize = 12.sp)
                 }
                 HorizontalPager(pager, verticalAlignment = Alignment.Top, pageSpacing = 16.dp) { p ->
                     val it = ws.items[list[p]]

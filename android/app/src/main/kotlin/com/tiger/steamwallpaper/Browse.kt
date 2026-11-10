@@ -62,12 +62,16 @@ private fun ItemGrid(v: ListView, header: @Composable () -> Unit, filter: Boolea
     val shown = v.ids.mapNotNull { ws.items[it] }.filter { (!filter || ws.store.passesFilters(it)) && (!unsubscribedOnly || !ws.isSubscribed(it.id)) }
     // 打开详情后可以左右滑动，按页面上的顺序切换
     val ids = shown.map { it.id }
+    // 快滚到底就加载下一页。加载状态也算在条件里：一页读完、筛选后还是不够一屏（比如这页全订阅了），会接着读下一页
     LaunchedEffect(v) {
         snapshotFlow {
             val info = v.grid.layoutInfo
-            (info.visibleItemsInfo.lastOrNull()?.index ?: 0) >= info.totalItemsCount - 6
-        }.collect { near -> if (near && !v.loading && !v.done && v.error == null && v.ids.isNotEmpty()) ws.loadMore(v) }
+            val near = (info.visibleItemsInfo.lastOrNull()?.index ?: 0) >= info.totalItemsCount - 6
+            near && !v.loading && !v.done && v.error == null && v.ids.isNotEmpty()
+        }.collect { if (it) ws.loadMore(v) }
     }
+    // 详情开着时，新加载的作品接到详情后面
+    LaunchedEffect(ids) { ws.extendDetail(v, ids) }
     Refreshable(refreshing = v.refreshing != null, onRefresh = { ws.refresh(v) }) {
         LazyVerticalGrid(
             columns = GridCells.Adaptive(150.dp),
@@ -93,7 +97,7 @@ private fun LazyGridScope.full(key: String, content: @Composable () -> Unit) {
 
 @Composable
 private fun Tile(it: Item, v: ListView, ids: List<String>) {
-    Column(Modifier.clip(RoundedCornerShape(14.dp)).clickable { ws.openDetail(it.id, ids) }) {
+    Column(Modifier.clip(RoundedCornerShape(14.dp)).clickable { ws.openDetail(it.id, ids, v) }) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceVariant)) {
             PreviewImage(it.preview, animate = false, modifier = Modifier.fillMaxSize())
             TileBadges(it, timeline = false)
@@ -112,6 +116,7 @@ fun BrowsePage(onSort: (Rect) -> Unit, onFilter: () -> Unit) {
         NeedLogin()
         return
     }
+    LaunchedEffect(Unit) { ws.browseView() }
     val v = ws.browse ?: return
     ItemGrid(v, header = {
         Column(Modifier.padding(horizontal = 2.dp)) {
