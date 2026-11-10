@@ -1,5 +1,6 @@
 package com.tiger.steamwallpaper
 
+import androidx.compose.ui.draw.drawBehind
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -140,16 +141,22 @@ fun PreviewImage(
         // 按 256 像素一档取整，同一张图在不同地方能共用缓存
         val px = with(density) { if (constraints.hasBoundedWidth) constraints.maxWidth else 1080.dp.roundToPx() }
             .let { ((it + 255) / 256 * 256).coerceIn(256, 2048) }
+        // 还没加载出来时：灰底上一道高光一直从左往右扫，看得出在加载
+        var loading by remember(url) { mutableStateOf(url.isNotEmpty()) }
+        if (loading) LoadingShimmer(Modifier.fillMaxSize())
         AsyncImage(
             model = small(url, px),
             contentDescription = null,
             contentScale = contentScale,
             filterQuality = FilterQuality.High,
             modifier = Modifier.fillMaxSize(),
+            onLoading = { loading = true },
             onSuccess = { s ->
+                loading = false
                 val img = s.result.image
                 if (img.height > 0) onRatio?.invoke(img.width.toFloat() / img.height)
             },
+            onError = { loading = false },
         )
         if (animate && url.isNotEmpty()) {
             var ready by remember(url) { mutableStateOf(false) }
@@ -163,6 +170,29 @@ fun PreviewImage(
             )
         }
     }
+}
+
+/** 图片加载中的占位：底色上一道斜着的高光循环扫过（只重画，不重组）。 */
+@Composable
+fun LoadingShimmer(modifier: Modifier = Modifier) {
+    val base = MaterialTheme.colorScheme.surfaceVariant
+    val shine = if (isDark()) Color.White.copy(alpha = 0.10f) else Color.White.copy(alpha = 0.6f)
+    val t = rememberInfiniteTransition(label = "shimmer")
+    val x = t.animateFloat(-0.6f, 1.6f, infiniteRepeatable(tween(1300, easing = LinearEasing), RepeatMode.Restart), label = "x")
+    Box(
+        modifier.drawBehind {
+            drawRect(base)
+            val w = size.width
+            val c = w * x.value
+            drawRect(
+                androidx.compose.ui.graphics.Brush.linearGradient(
+                    listOf(Color.Transparent, shine, Color.Transparent),
+                    start = androidx.compose.ui.geometry.Offset(c - w * 0.45f, 0f),
+                    end = androidx.compose.ui.geometry.Offset(c + w * 0.45f, size.height),
+                ),
+            )
+        },
+    )
 }
 
 /** 读到过的预览图宽高比（这次运行期间）。 */
