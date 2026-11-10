@@ -476,6 +476,10 @@ public sealed class WorkshopView : Grid
 		}
 		case "installed":
 			return Json.Write(await Task.Run(InstalledIds), pretty: false);
+		case "compact":
+			// 查重的小窗：窗口缩成屏幕右边的一条、置顶，去掉左边的导航
+			(Window.GetWindow(this) as MainWindow)?.SetCompact(args.Bool("on"));
+			return "true";
 		case "dupeApply":
 		{
 			string id = args.Str("id");
