@@ -266,7 +266,8 @@ private fun GroupPost(post: Post) {
 fun WallpaperBody(it: Item, track: Boolean) {
     val desc = bbcode(it.description ?: it.short)
     val more = it.description == null && desc.length >= 120
-    Text(it.title, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+    // 点标题打开详情面板（全部信息、标签、评论）
+    Text(it.title, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, modifier = Modifier.clickable { ws.openDetail(it.id) })
     if (desc.isNotEmpty()) {
         Text(
             desc, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp, lineHeight = 20.sp,
@@ -286,27 +287,44 @@ fun WallpaperBody(it: Item, track: Boolean) {
     if (it.images.isNotEmpty() || it.videos.isNotEmpty()) {
         PreviewStrip(it, cur) { url -> cur = url }
     }
-    val tags = it.tags.filter { t -> t != "Wallpaper" && t != it.type && t != it.age && !isResolutionTag(t) }
-    if (tags.isNotEmpty()) {
-        PillRow(Modifier.padding(top = 10.dp)) {
-            tags.forEach { t -> Pill(label(t), onClick = { ws.searchTag(t) }) }
-        }
-    }
     val total = (it.votesUp ?: 0) + (it.votesDown ?: 0)
     val nums = listOfNotNull(
         if (it.size > 0) size(it.size) else null,
         num(it.subs) + " 订阅",
         if (total > 0) "${(it.votesUp ?: 0) * 100 / total}% 好评" else null,
     ).joinToString(" · ")
-    Text(nums, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
-    HorizontalDivider(Modifier.padding(top = 10.dp))
-    FlowRow(
-        Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
-        itemVerticalAlignment = Alignment.CenterVertically,
-    ) {
-        SubscribeRow(it)
-        GlassButton("作者的全部作品", onClick = { ws.openAuthor(it.creator) })
-        GlassButton("详情和评论", onClick = { ws.openDetail(it.id) })
+    Text(nums, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+    Box(Modifier.padding(top = 10.dp)) { SubscribeRow(it, big = true) }
+    CommentPreview(it.id)
+}
+
+/**
+ * 卡片下面直接显示最新的几条评论（卡片滑到屏幕上时才去读）；没有评论时什么都不显示，多的点「查看全部」打开详情。
+ */
+@Composable
+private fun CommentPreview(id: String, max: Int = 3) {
+    LaunchedEffect(id) { if (ws.comments[id] == null) ws.loadComments(id) }
+    val c = ws.comments[id] ?: return
+    if (c.list.isEmpty()) return
+    HorizontalDivider(Modifier.padding(top = 12.dp, bottom = 6.dp))
+    Text("评论（${c.total}）", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.padding(bottom = 2.dp))
+    c.list.take(max).forEach { m ->
+        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+            Avatar(m.avatar, 30.dp, Modifier.clickable(enabled = m.steamId.isNotEmpty()) { ws.openAuthor(m.steamId) })
+            Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(m.name, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    if (m.time > 0) Text("  " + ago(m.time), fontSize = 12.sp, maxLines = 1)
+                }
+                Text(m.text, fontSize = 14.sp, lineHeight = 20.sp, maxLines = 4, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 1.dp))
+            }
+        }
+    }
+    if (c.total > max) {
+        Text(
+            "查看全部 ${c.total} 条评论 ›", fontSize = 13.sp, fontWeight = FontWeight.Medium,
+            modifier = Modifier.padding(top = 2.dp).clickable { ws.openDetail(id) }.padding(vertical = 4.dp),
+        )
     }
 }
 
