@@ -314,7 +314,8 @@ fun AccountSheet(open: Boolean, onDismiss: () -> Unit) {
                     GlassButton("检查更新", onClick = { updater.check(manual = true) })
                 }
             }
-            Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // 字大时一行放不下：自动换行
+            FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 GlassButton("在 GitHub 查看所有版本", onClick = { openUrl(context, "https://github.com/${BuildConfig.REPO}/releases") })
                 GlassButton("查看日志", onClick = { onDismiss(); LocalActions.log() })
             }
@@ -332,16 +333,21 @@ private fun SubsStatus() {
             val known = store.remoteSubsOwner.isNotEmpty() && store.remoteSubsOwner == ws.subscriberId
             Text(
                 when {
-                    ws.subsLoading -> "正在读取订阅列表…"
+                    ws.subsLoading -> ws.subsStatus.ifEmpty { "正在读取订阅列表…" }
                     known -> "订阅列表里有 ${store.remoteSubs.size} 个（" + ago(store.remoteSubsTime / 1000) + "读取）；打开详情时还会单独核对"
                     else -> "还没读取订阅列表"
                 },
                 fontSize = 13.sp,
             )
-            Text("Steam 网页可能不列出账号看不到的成人作品，这些只能在打开详情时核对。", fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+            ws.subsError?.let { Text(it, fontSize = 13.sp, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 2.dp)) }
         }
-        GlassButton("刷新", onClick = { ws.loadRemoteSubs(force = true) }, enabled = !ws.subsLoading)
+        GlassButton(if (ws.subsLoading) "读取中" else "刷新", onClick = { ws.loadRemoteSubs(force = true) }, enabled = !ws.subsLoading)
     }
+    ws.subsProgress?.let { p ->
+        LinearProgressIndicator(progress = { p }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+        Text("在后台读，可以关掉这个面板；读完会提示。", fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+    }
+    Text("Steam 网页可能不列出账号看不到的成人作品，这些只能在打开详情时核对。", fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
 }
 
 /** 订阅账号（大号）：只负责订阅，比如看不了成人内容的大号；可以把它的关注导入浏览账号。 */

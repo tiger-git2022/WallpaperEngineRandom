@@ -14,6 +14,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withPermit
 import org.json.JSONObject
 
 enum class Kind { Timeline, Browse, Author }
@@ -685,21 +686,39 @@ class Workshop(val steam: Steam, val sub: Steam, val store: Store, private val s
         if (!acct.loggedIn || subsLoading) return
         val owner = acct.steamId
         if (!force && store.remoteSubsOwner == owner && System.currentTimeMillis() - store.remoteSubsTime < 30 * 60_000L) return
+        // 换了账号或手动刷新时读完要告诉用户；半小时一次的自动刷新不打扰
+        val announce = force || store.remoteSubsOwner != owner
         subsLoading = true
+        subsError = null
+        subsProgress = 0f
+        subsStatus = "正在读取第 1 页…"
         scope.launch {
             try {
                 val all = LinkedHashSet<String>()
-                var page = 1
-                var total = 0
-                while (page <= 300) {
-                    val r = acct.subscriptions(page)
-                    total = maxOf(total, r.total)
-                    val before = all.size
-                    all.addAll(r.ids)
-                    if (r.ids.isEmpty() || all.size == before || (total > 0 && all.size >= total)) break
-                    page++
-                    delay(300)
+                // 第一页拿到总数，剩下的几页同时读（每次 4 页），1000 多个订阅也只要十几秒
+                val first = acct.subscriptions(1)
+                all.addAll(first.ids)
+                val total = first.total
+                val pages = if (total > 0 && first.ids.isNotEmpty()) minOf(400, (total + first.ids.size - 1) / first.ids.size) else 1
+                var done = 1
+                var failed = 0
+                val gate = kotlinx.coroutines.sync.Semaphore(4)
+                fun progress() {
+                    subsProgress = done.toFloat() / pages
+                    subsStatus = "正在读取：$done / $pages 页，已读到 ${all.size} 个" + if (total > 0) "（共 $total 个）" else ""
                 }
+                progress()
+                (2..pages).map { p ->
+                    async {
+                        gate.withPermit {
+                            // 失败的页重试一次
+                            val r = runCatching { acct.subscriptions(p) }.recoverCatching { delay(1500); acct.subscriptions(p) }.getOrNull()
+                            if (r == null) failed++ else all.addAll(r.ids)
+                            done++
+                            progress()
+                        }
+                    }
+                }.awaitAll()
                 if (acct.steamId == owner) {
                     store.remoteSubs.clear()
                     all.forEach { store.remoteSubs[it] = true }
@@ -707,16 +726,28 @@ class Workshop(val steam: Steam, val sub: Steam, val store: Store, private val s
                     store.remoteSubsTime = System.currentTimeMillis()
                     store.remoteSubsTotal = total
                     store.save()
-                    Log.i("读取订阅列表（$owner）：网页上写共 $total 个，读到 ${all.size} 个（$page 页）")
-                    if (force) toast("已读取订阅列表：${all.size} 个")
+                    Log.i("读取订阅列表（$owner）：网页上写共 $total 个，读到 ${all.size} 个（$pages 页，$failed 页失败）")
+                    if (failed > 0) subsError = "有 $failed 页没读到，订阅状态可能不全，可以再刷新一次"
+                    if (announce) toast("订阅列表读取完成：${all.size} 个" + if (failed > 0) "，有 $failed 页没读到" else "", long = failed > 0)
                 }
             } catch (e: Exception) {
                 Log.i("读取订阅列表失败（$owner）：${e.message}")
-                if (force) toast("读取订阅列表失败：" + errText(e), long = true)
+                subsError = "读取失败：" + errText(e)
+                if (announce) toast("读取订阅列表失败：" + errText(e), long = true)
             }
             subsLoading = false
+            subsProgress = null
+            subsStatus = ""
         }
     }
+
+    /** 读订阅列表的进度（0~1，没在读时为 null）、进度文字和上次的错误。 */
+    var subsProgress by mutableStateOf<Float?>(null)
+        private set
+    var subsStatus by mutableStateOf("")
+        private set
+    var subsError by mutableStateOf<String?>(null)
+        private set
 
     /** 打开详情时到壁纸的网页上核对一下订阅账号订阅了没有（网页看不到时不改）。 */
     private fun checkSubscribed(id: String) {
