@@ -1,5 +1,6 @@
 package com.tiger.steamwallpaper
 
+import kotlin.math.roundToInt
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.LaunchedEffect
 import android.content.Intent
@@ -292,6 +293,10 @@ private fun GlassCircle(onClick: () -> Unit, content: @Composable () -> Unit) {
 private fun TabPages(onSort: (Rect) -> Unit, onFilter: () -> Unit) {
     val keys = TABS.map { it.key }
     val pager = androidx.compose.foundation.pager.rememberPagerState(initialPage = keys.indexOf(ws.store.tab).coerceAtLeast(0)) { keys.size }
+    // 标签栏的高亮跟着手指走：滑到一半就停在两个标签中间
+    LaunchedEffect(pager) {
+        snapshotFlow { pager.currentPage + pager.currentPageOffsetFraction }.collect { tabPos.floatValue = it }
+    }
     // 点标签栏：滑到那一页
     LaunchedEffect(pager) {
         snapshotFlow { ws.store.tab }.collect { t ->
@@ -329,18 +334,28 @@ private val TABS = listOf(
 private fun TabBar(modifier: Modifier) {
     val atTabs = ws.stack.isEmpty()
     val scope = rememberCoroutineScope()
-    Row(
+    val gap = 4.dp
+    androidx.compose.foundation.layout.BoxWithConstraints(
         modifier.widthIn(max = 460.dp).fillMaxWidth().height(TabBarHeight)
             .glassClip(CircleShapeR, MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = GLASS_BAR_TINT), GlassStyle.Panel)
             .padding(5.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        TABS.forEach { t ->
-            val on = atTabs && ws.store.tab == t.key
+    val itemWidth = (maxWidth - gap * (TABS.size - 1)) / TABS.size
+    // 选中的高亮：一块，跟着页面左右滑动（作者页上不显示）
+    val pos = tabPos.floatValue
+    if (atTabs) {
+        Box(
+            Modifier.offset { androidx.compose.ui.unit.IntOffset(((itemWidth + gap).toPx() * pos).roundToInt(), 0) }
+                .width(itemWidth).fillMaxHeight().clip(CircleShapeR).background(glassSelectedColor()),
+        )
+    }
+    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(gap)) {
+        TABS.forEachIndexed { i, t ->
+            // 离高亮最近的那个标签算选中：滑过一半时文字颜色就换过去
+            val on = atTabs && kotlin.math.abs(pos - i) < 0.5f
             val color = if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
             Column(
                 Modifier.weight(1f).fillMaxHeight().clip(CircleShapeR)
-                    .background(if (on) glassSelectedColor() else androidx.compose.ui.graphics.Color.Transparent)
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = androidx.compose.material3.ripple()) {
                         if (on) {
                             // 再点一次当前标签：不在顶部就回到顶部，已经在顶部就刷新
@@ -388,4 +403,10 @@ private fun TabBar(modifier: Modifier) {
             }
         }
     }
+    }
 }
+
+/** 标签页左右滑动时的实时位置（0 = 时间线，1 = 浏览工坊，2 = 关注的作者，中间值 = 正在滑）。 */
+private val tabPos = androidx.compose.runtime.mutableFloatStateOf(
+    TABS.indexOfFirst { it.key == ws.store.tab }.coerceAtLeast(0).toFloat(),
+)
