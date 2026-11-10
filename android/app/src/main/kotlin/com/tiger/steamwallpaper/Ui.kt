@@ -273,13 +273,16 @@ fun Pill(
     trailing: ImageVector? = null,
     primary: Boolean = false,
     shape: androidx.compose.ui.graphics.Shape = PillShape,
+    accent: Color? = null,
 ) {
     val dark = isDark()
     val scheme = MaterialTheme.colorScheme
     val tile = LocalTileBackdrop.current
-    val content = (if (primary) scheme.primary else scheme.onSurface).let { if (enabled) it else it.copy(alpha = 0.4f) }
+    // [accent]：自己的颜色（「✓ 已订阅」的绿色），文字和玻璃里的那层光都用它
+    val content = (accent ?: if (primary) scheme.primary else scheme.onSurface).let { if (enabled) it else it.copy(alpha = 0.4f) }
     // 主要操作（关注、订阅、登录）：玻璃里一层浓一些的主题色；选中的：淡一些的
     val light = when {
+        accent != null -> accent.copy(alpha = if (dark) 0.3f else 0.16f)
         primary -> scheme.primary.copy(alpha = if (dark) 0.34f else 0.18f)
         selected -> glassSelectedColor()
         else -> Color.Transparent
@@ -305,7 +308,7 @@ fun Pill(
             Icon(leading, null, tint = content, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
         }
-        Text(text, color = content, fontSize = 14.sp, fontWeight = if (selected || primary) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1)
+        Text(text, color = content, fontSize = 14.sp, fontWeight = if (selected || primary || accent != null) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1)
         if (trailing != null) {
             Spacer(Modifier.width(4.dp))
             Icon(trailing, null, tint = content, modifier = Modifier.size(18.dp))
@@ -327,7 +330,8 @@ fun GlassButton(
     enabled: Boolean = true,
     leading: ImageVector? = null,
     primary: Boolean = false,
-) = Pill(text, onClick, modifier, enabled = enabled, leading = leading, primary = primary, shape = ButtonShape)
+    accent: Color? = null,
+) = Pill(text, onClick, modifier, enabled = enabled, leading = leading, primary = primary, shape = ButtonShape, accent = accent)
 
 /** 一排会换行的胶囊，行和行之间留空。 */
 @Composable
@@ -345,14 +349,12 @@ fun SubscribeRow(it: Item, big: Boolean = false) {
         Box(Modifier.height(40.dp).padding(horizontal = 16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) }
         return
     }
+    // 和「已关注」一样：已订阅也是按钮，点一下取消订阅
+    val size = if (big) Modifier.fillMaxWidth().heightIn(min = 44.dp) else Modifier
     if (sub) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("✓ 已订阅", color = Tones.Ok, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.padding(start = 4.dp))
-            Spacer(Modifier.width(10.dp))
-            GlassButton("取消订阅", onClick = { ws.subscribe(it, false) })
-        }
+        GlassButton("✓ 已订阅", onClick = { ws.subscribe(it, false) }, accent = Tones.Ok, modifier = size)
     } else {
-        GlassButton("+ 订阅", onClick = { ws.subscribe(it, true) }, primary = true, modifier = if (big) Modifier.fillMaxWidth().heightIn(min = 44.dp) else Modifier)
+        GlassButton("+ 订阅", onClick = { ws.subscribe(it, true) }, primary = true, modifier = size)
     }
 }
 

@@ -566,12 +566,13 @@ fun Toast(modifier: Modifier = Modifier) {
         delay(if (ws.toastLong) 6000 else 2800)
         visible = false
     }
-    AnimatedVisibility(visible, modifier = modifier, enter = fadeIn() + scaleIn(initialScale = 0.9f), exit = fadeOut()) {
-        val shape = RoundedCornerShape(50)
+    AnimatedVisibility(visible, modifier = modifier.padding(horizontal = 24.dp), enter = fadeIn() + scaleIn(initialScale = 0.9f), exit = fadeOut()) {
+        // 圆角矩形：字多换成几行时，四角的字不会碰到圆头的边
+        val shape = RoundedCornerShape(22.dp)
         Text(
-            text, fontSize = 14.sp,
-            modifier = Modifier.widthIn(max = 340.dp).glassClip(shape, MaterialTheme.colorScheme.surfaceContainerHighest, GlassStyle.Panel)
-                .padding(horizontal = 18.dp, vertical = 10.dp),
+            text, fontSize = 14.sp, lineHeight = 20.sp, maxLines = 5, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.widthIn(max = 360.dp).glassClip(shape, MaterialTheme.colorScheme.surfaceContainerHighest, GlassStyle.Panel)
+                .padding(horizontal = 20.dp, vertical = 12.dp),
         )
     }
 }
