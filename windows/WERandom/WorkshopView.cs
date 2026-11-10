@@ -278,6 +278,8 @@ public sealed class WorkshopView : Grid
 			string head = Json.Write(o, pretty: false);
 			return head.Substring(0, head.Length - 1) + ",\"details\":" + details + "}";
 		}
+		case "comments":
+			return await steam.CommentsAsync(args.Str("owner"), args.Str("id"), args.Int("start"), args.Int("count", 20));
 		case "following":
 			return Json.Write(await steam.FollowingAsync(), pretty: false);
 		case "profiles":

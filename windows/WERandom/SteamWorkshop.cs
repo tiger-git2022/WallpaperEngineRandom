@@ -16,6 +16,8 @@ namespace WERandom;
 /// 访问 Steam 创意工坊：用户在内嵌的 WebView2 里登录一次 Steam，之后用它的 cookie 调接口。
 /// - 时间线、搜索：IPublishedFileService/QueryFiles（登录后取的 webapi_token，参数用 input_json）
 /// - 作者全部作品：作者的 myworkshopfiles 页面（带登录 cookie 才能看到成人分级的作品）拿 ID，再用公开的 GetPublishedFileDetails 补详情
+///   （GetUserFiles 只认开发者 key，用登录令牌调返回 401）
+/// - 评论：公开的 comment/PublishedFile_Public/render（返回评论的 HTML，由页面解析）
 /// - 订阅 / 关注：Steam 网页上那两个按钮用的接口（sessionid 表单）
 /// - 作者名字和头像：公开的个人资料 ?xml=1
 /// </summary>
@@ -283,6 +285,27 @@ public sealed class SteamWorkshop
 		if (!resp.IsSuccessStatusCode)
 		{
 			throw new SteamException((int)resp.StatusCode, "Steam 接口返回 " + (int)resp.StatusCode);
+		}
+		return text;
+	}
+
+	/// <summary>
+	/// 壁纸下面的评论（公开接口，不需要登录），从新到旧，从第 start 条起最多 count 条。
+	/// 返回 Steam 原始 JSON（success、total_count、comments_html），评论的 HTML 由页面解析。
+	/// </summary>
+	public async Task<string> CommentsAsync(string owner, string id, int start, int count)
+	{
+		CheckSteamId(owner);
+		if (!Regex.IsMatch(id ?? "", "^\\d+$"))
+		{
+			throw new ArgumentException("壁纸 ID 不对");
+		}
+		var form = new Dictionary<string, string> { ["start"] = Math.Max(0, start).ToString(), ["count"] = Math.Max(1, Math.Min(50, count)).ToString() };
+		using HttpResponseMessage resp = await _http.PostAsync(Community + "/comment/PublishedFile_Public/render/" + owner + "/" + id + "/", new FormUrlEncodedContent(form));
+		string text = await resp.Content.ReadAsStringAsync();
+		if (!resp.IsSuccessStatusCode)
+		{
+			throw new SteamException((int)resp.StatusCode, "Steam 返回 " + (int)resp.StatusCode);
 		}
 		return text;
 	}
