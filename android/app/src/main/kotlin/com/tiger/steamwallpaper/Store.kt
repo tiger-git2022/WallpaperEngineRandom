@@ -40,6 +40,9 @@ class Store(private val file: File, private val scope: CoroutineScope) {
     var mergePosts by mutableStateOf(false)
     var glass by mutableStateOf(true)
 
+    /** 登录过订阅账号（大号）：之后启动时才去读它的配置文件（不用时不初始化 WebView）。 */
+    var subAccount by mutableStateOf(false)
+
     /** 所有玻璃的模糊（0.1 dp）、底色不透明度（%）和边缘色差（0~100，100 = 红绿蓝错开 12 dp），和 EhViewer 分支的设置一样。 */
     var glassBlur by mutableIntStateOf(25)
     var glassTint by mutableIntStateOf(40)
@@ -75,6 +78,7 @@ class Store(private val file: File, private val scope: CoroutineScope) {
             tab = o.optString("tab").takeIf { it in listOf("timeline", "browse", "following") } ?: "timeline"
             mergePosts = o.optBoolean("mergePosts")
             glass = o.optBoolean("glass", true)
+            subAccount = o.optBoolean("subAccount")
             glassBlur = o.optInt("glassBlur", 25).coerceIn(0, 100)
             glassTint = o.optInt("glassTint", 40).coerceIn(0, 100)
             glassFringe = o.optInt("glassFringe", 50).coerceIn(0, 100)
@@ -109,6 +113,7 @@ class Store(private val file: File, private val scope: CoroutineScope) {
         o.put("tab", tab)
         o.put("mergePosts", mergePosts)
         o.put("glass", glass)
+        o.put("subAccount", subAccount)
         o.put("glassBlur", glassBlur)
         o.put("glassTint", glassTint)
         o.put("glassFringe", glassFringe)

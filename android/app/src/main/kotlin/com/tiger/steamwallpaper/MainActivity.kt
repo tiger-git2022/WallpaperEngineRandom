@@ -85,11 +85,16 @@ class MainActivity : ComponentActivity() {
         if (w.me.loggedIn) w.toast("已登录 Steam")
     }
 
+    private val subLogin = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        App.instance.workshop.afterSubLogin()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         val app = App.instance
         LocalActions.login = { login.launch(Intent(this, LoginActivity::class.java)) }
+        LocalActions.loginSub = { subLogin.launch(Intent(this, LoginActivity::class.java).putExtra(LoginActivity.EXTRA_SUB, true)) }
         if (!started) {
             started = true
             app.workshop.start()
