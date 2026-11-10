@@ -70,17 +70,31 @@ jobs:
           $text += "`n[assembly: AssemblyFileVersion(`"$ver.0`")]`n[assembly: AssemblyInformationalVersion(`"$ver`")]`n"
           Set-Content $file $text -Encoding utf8
 
+      # 单文件：第一次正常编译出所有 dll，第二次把它们嵌进 exe（见 windows/WERandom/Bundle.cs）。
+      # 第二次要 --no-incremental：那些 dll 的时间比第一次编出的 exe 早，增量编译会认为不用重新编译
       - name: Build
-        run: dotnet build windows/WERandom.csproj -c Release -o out
+        shell: pwsh
+        run: |
+          dotnet build windows/WERandom.csproj -c Release -o out
+          if ($LASTEXITCODE) { exit 1 }
+          dotnet build windows/WERandom.csproj -c Release -o single "-p:EmbedFrom=$PWD/out" --no-incremental
+          if ($LASTEXITCODE) { exit 1 }
 
       - name: Package
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          Get-ChildItem out -Recurse -Include *.pdb, *.lib | Remove-Item -Force
-          Copy-Item README.md, LICENSE, CHANGELOG.md out/
-          $zip = "dist/WallpaperEngineRandom-v$env:VERSION-win-x64.zip"
-          Compress-Archive -Path out/* -DestinationPath $zip
+          $exe = "dist/WERandom-v$env:VERSION-win-x64.exe"
+          Copy-Item single/WERandom.exe $exe
+          # 1.3.x 及更早的程序只认 zip 安装包。1.4.0 另外发一个只装着这个单文件 exe 的 zip，让它们能自动更新过来；之后的版本只发 exe。
+          $assets = @($exe)
+          if ($env:VERSION -eq '1.4.0') {
+            New-Item -ItemType Directory -Force bridge | Out-Null
+            Copy-Item single/WERandom.exe bridge/
+            $zip = "dist/WallpaperEngineRandom-v$env:VERSION-win-x64.zip"
+            Compress-Archive -Path bridge/* -DestinationPath $zip
+            $assets += $zip
+          }
           # update.json：程序从 releases/latest/download/update.json 读新版本，格式和 GitHub 接口的发布信息一样，
           # 这样不占接口每个 IP 每小时 60 次的额度。说明取 CHANGELOG.md 里本版本那一节。
           $lines = Get-Content CHANGELOG.md -Encoding utf8
@@ -93,17 +107,19 @@ jobs:
             $notes = ($body -join "`n").Trim()
           }
           $tag = "v$env:VERSION"
-          $name = Split-Path $zip -Leaf
           $base = "https://github.com/${{ github.repository }}/releases"
           [ordered]@{
             tag_name = $tag
             html_url = "$base/tag/$tag"
             body = $notes
-            assets = @([ordered]@{
-              name = $name
-              size = (Get-Item $zip).Length
-              digest = "sha256:" + (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-              browser_download_url = "$base/download/$tag/$name"
+            assets = @($assets | ForEach-Object {
+              $name = Split-Path $_ -Leaf
+              [ordered]@{
+                name = $name
+                size = (Get-Item $_).Length
+                digest = "sha256:" + (Get-FileHash $_ -Algorithm SHA256).Hash.ToLowerInvariant()
+                browser_download_url = "$base/download/$tag/$name"
+              }
             })
           } | ConvertTo-Json -Depth 4 | Set-Content dist/update.json -Encoding utf8NoBOM
           Get-Content dist/update.json
@@ -113,6 +129,7 @@ jobs:
         with:
           name: WallpaperEngineRandom-win-x64
           path: |
+            dist/*.exe
             dist/*.zip
             dist/update.json
 
@@ -123,6 +140,7 @@ jobs:
           tag_name: v${{ env.VERSION }}
           target_commitish: ${{ github.sha }}
           files: |
+            dist/*.exe
             dist/*.zip
             dist/update.json
           generate_release_notes: true
