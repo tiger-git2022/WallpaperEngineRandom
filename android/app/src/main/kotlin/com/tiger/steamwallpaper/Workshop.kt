@@ -119,9 +119,14 @@ class Workshop(val steam: Steam, val sub: Steam, val store: Store, private val s
     var toast by mutableStateOf<Pair<String, Long>?>(null)
         private set
 
-    fun toast(text: String) {
+    /** 屏幕下方的提示；[long] 的（出错）显示久一点。 */
+    fun toast(text: String, long: Boolean = false) {
         toast = text to System.currentTimeMillis()
+        toastLong = long
     }
+
+    var toastLong = false
+        private set
 
     // ---- login ----
 
@@ -664,7 +669,7 @@ class Workshop(val steam: Steam, val sub: Steam, val store: Store, private val s
         busy[key] = true
         scope.launch {
             try {
-                if (!subscriber.subscribe(it.id, on)) throw Exception("Steam 没有确认")
+                subscriber.subscribe(it.id, on)
                 if (on) {
                     store.subscribed[it.id] = System.currentTimeMillis()
                     toast("已订阅「${it.title}」" + (if (sub.loggedIn) "到订阅账号" else "") + "，电脑上的 Steam 会自动下载")
@@ -675,7 +680,10 @@ class Workshop(val steam: Steam, val sub: Steam, val store: Store, private val s
                 store.save()
                 Log.i((if (on) "订阅 " else "取消订阅 ") + it.id)
             } catch (e: Exception) {
-                toast((if (on) "订阅" else "取消订阅") + "失败：" + errText(e))
+                val who = if (sub.loggedIn) "（订阅账号「${subMe.name.ifEmpty { subMe.steamId }}」）" else ""
+                val hint = if (sub.loggedIn && (e as? SteamException)?.status.let { it == 15 || it == 21 || it == 401 || it == 0 }) "；可以在账号面板退出订阅账号再重新登录" else ""
+                Log.i((if (on) "订阅 " else "取消订阅 ") + it.id + " 失败$who：" + errText(e))
+                toast((if (on) "订阅" else "取消订阅") + "失败$who：" + errText(e) + hint, long = true)
             }
             busy.remove(key)
         }

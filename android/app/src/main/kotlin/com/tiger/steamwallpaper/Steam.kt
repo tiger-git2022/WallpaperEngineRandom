@@ -309,13 +309,34 @@ class Steam(
         return ids
     }
 
+    /** 订阅 / 取消订阅；Steam 没确认时抛出带原因的异常（结果码见 [resultText]）。 */
     suspend fun subscribe(id: String, on: Boolean): Boolean {
         if (!Regex("^\\d{1,20}$").matches(id)) throw SteamException(400, "壁纸 ID 不对")
         val text = postCommunity(
             "$COMMUNITY/sharedfiles/" + (if (on) "subscribe" else "unsubscribe"),
             mapOf("id" to id, "appid" to APP_ID, "sessionid" to sessionId),
         )
-        return successOf(text)
+        if (successOf(text)) return true
+        val code = runCatching { JSONObject(text).opt("success") }.getOrNull()
+        Log.i("订阅 $id 没成功：${text.take(200)}")
+        throw SteamException(if (code is Number) code.toInt() else 0, resultText(code, text))
+    }
+
+    /** Steam 的 EResult 码（常见的几个）和返回网页（没登录时跳到登录页）翻成中文。 */
+    private fun resultText(code: Any?, text: String): String = when {
+        code == null && ("login" in text.lowercase() || text.trimStart().startsWith("<")) -> "登录过期了，请重新登录"
+        code is Number -> when (code.toInt()) {
+            2 -> "Steam 出错（结果码 2），稍后再试"
+            8 -> "参数不对（结果码 8）"
+            9 -> "找不到这个壁纸（可能已被删除或设为私密）"
+            15 -> "没有权限（结果码 15），可能是登录过期了，请重新登录"
+            16, 20 -> "Steam 超时或忙（结果码 ${code.toInt()}），稍后再试"
+            21 -> "账号没有登录（结果码 21），请重新登录"
+            25 -> "订阅数到上限了（结果码 25）"
+            84 -> "操作太频繁（结果码 84），过一会再试"
+            else -> "Steam 返回结果码 ${code.toInt()}"
+        }
+        else -> "Steam 没有确认"
     }
 
     suspend fun follow(steamId: String, on: Boolean): Boolean {

@@ -531,7 +531,7 @@ fun Toast(modifier: Modifier = Modifier) {
         if (t == null) return@LaunchedEffect
         text = t.first
         visible = true
-        delay(2800)
+        delay(if (ws.toastLong) 6000 else 2800)
         visible = false
     }
     AnimatedVisibility(visible, modifier = modifier, enter = fadeIn() + scaleIn(initialScale = 0.9f), exit = fadeOut()) {
