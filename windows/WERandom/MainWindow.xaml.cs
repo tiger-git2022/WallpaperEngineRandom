@@ -415,8 +415,11 @@ public partial class MainWindow : FluentWindow
 		}
 	}
 
-	/// <summary>Rounded image (or a placeholder icon) that fills its slot.</summary>
-	private static FrameworkElement Thumb(System.Windows.Media.Imaging.BitmapSource img, double width, double height, double radius, byte[] gif = null)
+	/// <summary>
+	/// Rounded image (or a placeholder icon). By default it fills its slot (cropped); whole = true shows the whole picture
+	/// inside the slot instead (previews are mostly square, the "正在播放" slot is 16:9 and cropping left only a strip).
+	/// </summary>
+	private static FrameworkElement Thumb(System.Windows.Media.Imaging.BitmapSource img, double width, double height, double radius, byte[] gif = null, bool whole = false)
 	{
 		var border = new Border
 		{
@@ -430,7 +433,7 @@ public partial class MainWindow : FluentWindow
 			border.Child = new SymbolIcon { Symbol = SymbolRegular.ImageOff24, FontSize = 28, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
 			return border;
 		}
-		var image = new System.Windows.Controls.Image { Source = img, Stretch = System.Windows.Media.Stretch.UniformToFill };
+		var image = new System.Windows.Controls.Image { Source = img, Stretch = whole ? System.Windows.Media.Stretch.Uniform : System.Windows.Media.Stretch.UniformToFill };
 		System.Windows.Media.RenderOptions.SetBitmapScalingMode(image, System.Windows.Media.BitmapScalingMode.HighQuality);
 		if (gif != null)
 		{
@@ -471,8 +474,9 @@ public partial class MainWindow : FluentWindow
 			NowEntry e = entries[i];
 			CurrentWallpaper.Item it = e.Item;
 			var card = new StackPanel { Margin = new Thickness(8, 0, 8, 8) };   // same on every card (the grid has -8 on both sides), so all are equally wide
-			FrameworkElement thumb = Thumb(e.Image, double.NaN, 169, 6, e.Gif);
-			card.SizeChanged += (s, a) => thumb.Height = Math.Round(a.NewSize.Width * 9 / 16);
+			FrameworkElement thumb = Thumb(e.Image, double.NaN, 169, 6, e.Gif, whole: true);
+			// 16:9 slot, at most 360 high (one monitor makes the card as wide as the page)
+			card.SizeChanged += (s, a) => thumb.Height = Math.Min(360, Math.Round(a.NewSize.Width * 9 / 16));
 			thumb.Cursor = System.Windows.Input.Cursors.Hand;
 			thumb.ToolTip = "打开壁纸文件夹";
 			string folder = it.Folder;
@@ -509,7 +513,7 @@ public partial class MainWindow : FluentWindow
 			card.Children.Add(buttons);
 			NowPanel.Children.Add(card);
 
-			FrameworkElement small = Thumb(e.Image, double.NaN, entries.Count == 1 ? 110 : 56, 4, e.Gif);
+			FrameworkElement small = Thumb(e.Image, double.NaN, entries.Count == 1 ? 110 : 56, 4, e.Gif, whole: true);
 			small.Margin = new Thickness(2, 0, 2, 0);
 			small.ToolTip = it.Monitor + "：" + it.Title;
 			SideThumbs.Children.Add(small);
