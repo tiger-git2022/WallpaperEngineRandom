@@ -389,6 +389,96 @@ public sealed class SteamWorkshop
 		return ids;
 	}
 
+	public sealed class SubsPage
+	{
+		public List<string> Ids = new List<string>();
+
+		public int Total;
+	}
+
+	private static readonly Regex[] SubIdPatterns =
+	{
+		new Regex("id=\"Subscription(\\d+)\""),
+		new Regex("UnsubscribeItem\\(\\s*'(\\d+)'"),
+		new Regex("data-publishedfileid=\"(\\d+)\"")
+	};
+
+	/// <summary>
+	/// 这个账号订阅的 WE 壁纸：自己的「已订阅的物品」网页，每页 30 个，page 从 1 开始。网页会按账号的内容设置
+	/// 藏起一些看不到的作品，所以可能比实际少。网页不是以这个账号登录打开的（登录过期）时抛出异常。
+	/// </summary>
+	public async Task<SubsPage> SubscriptionsAsync(int page)
+	{
+		RequireLogin();
+		string me = SteamId;
+		string html = await GetCommunityAsync(Community + "/profiles/" + me + "/myworkshopfiles/?appid=" + AppId + "&browsefilter=mysubscriptions&numperpage=30&p=" + Math.Max(1, page));
+		if (PageAccount(html) != me)
+		{
+			throw new SteamException(401, "登录过期了，请重新登录");
+		}
+		var result = new SubsPage();
+		foreach (Regex re in SubIdPatterns)
+		{
+			foreach (Match m in re.Matches(html))
+			{
+				if (!result.Ids.Contains(m.Groups[1].Value))
+				{
+					result.Ids.Add(m.Groups[1].Value);
+				}
+			}
+		}
+		if (result.Ids.Count == 0)
+		{
+			foreach (Match m in Regex.Matches(html, "sharedfiles/filedetails/\\?id=(\\d+)"))
+			{
+				if (!result.Ids.Contains(m.Groups[1].Value))
+				{
+					result.Ids.Add(m.Groups[1].Value);
+				}
+			}
+		}
+		Match paging = Regex.Match(html, "workshopBrowsePagingInfo\">([^<]*)<");
+		if (paging.Success)
+		{
+			MatchCollection nums = Regex.Matches(paging.Groups[1].Value.Replace(",", ""), "\\d+");
+			if (nums.Count > 0)
+			{
+				int.TryParse(nums[nums.Count - 1].Value, out result.Total);
+			}
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// 打开壁纸的网页看这个账号订阅了没有（「订阅」按钮带 toggled）。网页不是以这个账号登录的、或者看不到按钮
+	/// （比如这个号看不到的作品）时返回 null。
+	/// </summary>
+	public async Task<bool?> SubscribedOnPageAsync(string id)
+	{
+		if (!LoggedIn || !Regex.IsMatch(id ?? "", "^\\d{1,20}$"))
+		{
+			return null;
+		}
+		string html = await GetCommunityAsync(Community + "/sharedfiles/filedetails/?id=" + id);
+		if (PageAccount(html) != SteamId)
+		{
+			return null;
+		}
+		Match btn = Regex.Match(html, "<a[^>]*id=\"SubscribeItemBtn\"[^>]*>");
+		if (!btn.Success)
+		{
+			return null;
+		}
+		return btn.Value.Contains("toggled") || Regex.IsMatch(html, "class=\"subscribeOption subscribed[^\"]*selected");
+	}
+
+	/// <summary>网页是以哪个账号登录打开的（g_steamID），没登录时为空。</summary>
+	private static string PageAccount(string html)
+	{
+		Match m = Regex.Match(html, "g_steamID = \"(\\d{17})\"");
+		return m.Success ? m.Groups[1].Value : "";
+	}
+
 	/// <summary>订阅 / 取消订阅；Steam 没确认时抛出 SteamException，消息是中文的原因（Status 是 Steam 的结果码）。</summary>
 	public async Task SubscribeAsync(string id, bool on)
 	{

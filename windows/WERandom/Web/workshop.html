@@ -315,11 +315,82 @@ function norm(f) {
   };
 }
 function remember(f) { const n = norm(f); const old = items.get(n.id); if (old) { for (const k in n) if (n[k] != null && !(Array.isArray(n[k]) && !n[k].length && old[k] && old[k].length)) old[k] = n[k]; return old; } items.set(n.id, n); return n; }
+// installed: downloaded by the Steam client here; pending: subscribed in this app, not downloaded yet;
+// subscribed: in the subscribing account's subscription list on Steam (S.subs), not downloaded here
 function subState(id) {
   if (unsubscribed.has(id)) return '';
   if (installed.has(id)) return 'installed';
   if (S.pending[id]) return 'pending';
+  if (onSteam(id)) return 'subscribed';
   return '';
+}
+const onSteam = id => !!(S.subs && S.subs.owner && S.subs.owner === subscriber().steamid && S.subs.ids[id]);
+
+// ---------- subscriptions on Steam ----------
+// S.subs = { owner, ids: { id: 1 }, total, time }: the subscription list of the account that subscribes (the
+// subscribe account, or the browse account without one), read from its "subscribed items" pages, 4 pages at a time.
+// Read on start, when that account changes, every 30 minutes, and from the account menu.
+let subsLoading = null, subsError = null;
+async function loadSubs(force) {
+  const owner = me.loggedIn ? subscriber().steamid : '';
+  if (!owner || subsLoading) return;
+  const old = S.subs;
+  if (!force && old && old.owner === owner && Date.now() - old.time < 30 * 60e3) return;
+  const announce = force || !old || old.owner !== owner;
+  subsLoading = '正在读取订阅列表…'; subsError = null; paintSubs();
+  try {
+    const first = await host.call('subs', { page: 1 });
+    if (first.owner !== owner) return;
+    const all = new Set(first.ids), total = +first.total || 0;
+    const pages = total > 0 && first.ids.length ? Math.min(400, Math.ceil(total / first.ids.length)) : 1;
+    let done = 1, failed = 0, next = 2;
+    const progress = () => { subsLoading = `正在读取订阅列表：${done} / ${pages} 页，已读到 ${all.size} 个${total ? `（共 ${total} 个）` : ''}`; paintSubs(); };
+    progress();
+    const page = async p => { try { return await host.call('subs', { page: p }); } catch (e) { await new Promise(r => setTimeout(r, 1500)); return host.call('subs', { page: p }).catch(() => null); } };
+    const worker = async () => {
+      while (next <= pages) {
+        const r = await page(next++);
+        if (r && r.owner === owner) r.ids.forEach(id => all.add(id)); else failed++;
+        done++; progress();
+      }
+    };
+    await Promise.all([worker(), worker(), worker(), worker()]);
+    if (subscriber().steamid !== owner) return;
+    const before = S.subs && S.subs.owner === owner ? S.subs.ids : {};
+    S.subs = { owner, ids: Object.fromEntries([...all].map(id => [id, 1])), total, time: Date.now() };
+    save();
+    host.call('subsLog', { message: `读取订阅列表（${owner}）：网页上写共 ${total} 个，读到 ${all.size} 个（${pages} 页，${failed} 页失败）` }).catch(() => {});
+    if (failed) subsError = `有 ${failed} 页没读到，订阅状态可能不全，可以再刷新一次`;
+    if (announce || failed) toast(`订阅列表读取完成：${all.size} 个` + (failed ? `，有 ${failed} 页没读到` : ''), failed ? 6000 : 3500);
+    // redraw only the wallpapers whose state changed
+    for (const id of new Set([...Object.keys(before), ...all])) if (!before[id] !== !S.subs.ids[id]) refreshTile(id);
+    if (selected && !before[selected] !== !S.subs.ids[selected]) { const it = items.get(selected), box = $('.dv .actions'); if (it && box) renderActions(box, it); }
+  } catch (e) {
+    subsError = '读取失败：' + errText(e);
+    if (announce) toast('读取订阅列表失败：' + errText(e), 6000);
+  } finally {
+    subsLoading = null; paintSubs();
+    // the account that subscribes changed while reading: read the new one's list now
+    if (me.loggedIn && subscriber().steamid && subscriber().steamid !== owner) setTimeout(() => loadSubs(), 0);
+  }
+}
+function paintSubs() { if ($('#accounts').classList.contains('on')) renderAccounts(); }
+// opening a wallpaper's details: check its page once (the list can be out of date, or miss what the account can't see)
+async function checkSubscribed(id) {
+  const owner = me.loggedIn ? subscriber().steamid : '';
+  if (!owner) return;
+  try {
+    const r = await host.call('subCheck', { id });
+    if (r.on == null || r.owner !== owner || subscriber().steamid !== owner) return;
+    const before = subState(id);
+    if (r.on) unsubscribed.delete(id); else { unsubscribed.add(id); delete S.pending[id]; }
+    if (S.subs && S.subs.owner === owner && !S.subs.ids[id] !== !r.on) { if (r.on) S.subs.ids[id] = 1; else delete S.subs.ids[id]; save(); }
+    if (subState(id) !== before) {
+      host.call('subsLog', { message: `壁纸 ${id} 的订阅状态按网页改为${r.on ? '已订阅' : '没订阅'}` }).catch(() => {});
+      refreshTile(id);
+      if (selected === id) { const it = items.get(id), box = $('.dv .actions'); if (it && box) renderActions(box, it); }
+    }
+  } catch (e) { }
 }
 
 // ---------- filters ----------
@@ -382,18 +453,33 @@ function renderAccounts() {
       ${me.loggedIn ? row(me, 'logout') : '<button class="primary" data-a="login">登录浏览账号</button>'}</div>
     <div class="acc"><div class="h">订阅账号</div><div class="d">只负责订阅。请登录 <b>Steam 客户端里用的号</b>，订阅后由客户端下载；没登录时订阅用浏览账号。壁纸上的「已订阅」看的是本机 Steam 客户端的下载情况。</div>
       ${s.available === false ? '<div class="d">订阅账号用不了：WebView2 初始化失败，详见日志。</div>' : s.loggedIn ? row(s, 'subLogout') : '<button class="primary" data-a="subLogin">登录订阅账号</button>'}
+      ${me.loggedIn ? `<div class="d" style="margin:10px 0 0">${subsLine()}</div>` : ''}
       ${twoAccounts() ? `<button data-a="import" style="margin-top:12px;width:100%"${importing ? ' disabled' : ''}>把订阅账号关注的作者导入浏览账号</button><div class="d" style="margin:4px 0 0">只加不减；之后两个号的关注不会自动同步。</div>` : ''}</div>`;
-  box.onclick = e => { const b = e.target.closest('[data-a]'); if (!b) return; e.stopPropagation(); toggleAccounts(false); ACCOUNT_ACTIONS[b.dataset.a](); };
+  box.onclick = e => {
+    const b = e.target.closest('[data-a]'); if (!b) return; e.stopPropagation();
+    if (b.dataset.a !== 'subsRefresh') toggleAccounts(false);   // keep the menu open to show the progress
+    ACCOUNT_ACTIONS[b.dataset.a]();
+  };
+}
+// "Steam 上的订阅" line in the account menu
+function subsLine() {
+  const who = twoAccounts() ? '订阅账号' : '这个号';
+  if (subsLoading) return `<span class="spin"></span> ${esc(subsLoading)}`;
+  const s = S.subs, mine = s && s.owner === subscriber().steamid;
+  const when = mine ? new Date(s.time) : null;
+  const text = mine ? `${who}在 Steam 上订阅了 ${Object.keys(s.ids).length} 个${s.total && s.total !== Object.keys(s.ids).length ? `（网页上写 ${s.total} 个）` : ''}，${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')} 读取` : `还没读取${who}在 Steam 上的订阅`;
+  return `${text}${subsError ? `；<span style="color:var(--danger)">${esc(subsError)}</span>` : ''} <a data-a="subsRefresh">刷新</a>`;
 }
 async function subLogin() {
   try {
     me = await host.call('subLogin'); renderMe(); const s = me.sub || {};
     if (s.loggedIn) toast(s.steamid === me.steamid ? '订阅账号和浏览账号是同一个号' : '已登录订阅账号「' + (s.name || s.steamid) + '」，之后订阅都加到这个号上', 4500);
     if (current) renderList(true);
+    loadSubs();
   } catch (e) { toast('登录订阅账号失败：' + errText(e), 6000); }
 }
 async function subLogout() {
-  try { me = await host.call('subLogout'); renderMe(); toast('已退出订阅账号，订阅改用浏览账号', 4000); if (current) renderList(true); }
+  try { me = await host.call('subLogout'); renderMe(); toast('已退出订阅账号，订阅改用浏览账号', 4000); if (current) renderList(true); loadSubs(); }
   catch (e) { toast('退出订阅账号失败：' + errText(e), 6000); }
 }
 // follow, with the browse account, everyone the subscribe account follows (only adds)
@@ -422,8 +508,8 @@ async function login() {
   catch (e) { toast('登录失败：' + errText(e)); }
 }
 async function logout() { me = await host.call('logout'); renderMe(); for (const k in views) views[k] = null; openTab(S.tab); }
-async function afterLogin() { for (const k in views) views[k] = null; loadFollows(); openTab(S.tab); }
-const ACCOUNT_ACTIONS = { login, logout, subLogin, subLogout, import: importFollows };
+async function afterLogin() { for (const k in views) views[k] = null; loadFollows(); openTab(S.tab); loadSubs(); }
+const ACCOUNT_ACTIONS = { login, logout, subLogin, subLogout, import: importFollows, subsRefresh: () => loadSubs(true) };
 
 // ---------- list views ----------
 // view: { kind: 'timeline'|'browse'|'author', key, ids: [], cursor, page, done, loading, total, error, author }
@@ -635,7 +721,7 @@ function tileHtml(it, v, mode) {
     <div class="thumb"><img loading="lazy" src="${esc(small(it.preview, mode === 'big' ? 760 : 320))}" data-small="${esc(small(it.preview, mode === 'big' ? 760 : 320))}" alt="">
       <div class="badges">${isNew ? '<span class="badge new">NEW</span>' : ''}</div>
       ${type ? `<span class="badge type">${LABEL[type]}</span>` : ''}
-      ${st === 'installed' ? '<span class="badge sub">✓ 已订阅</span>' : st === 'pending' ? '<span class="badge dl">下载中</span>' : ''}
+      ${st === 'installed' || st === 'subscribed' ? '<span class="badge sub">✓ 已订阅</span>' : st === 'pending' ? '<span class="badge dl">下载中</span>' : ''}
       ${canSub ? '<button class="qs" title="直接订阅，Steam 会自动下载">+ 订阅</button>' : ''}
     </div>
     ${mode === 'big' ? '' : `<div class="t" title="${esc(it.title)}">${esc(it.title)}</div>`}
@@ -696,6 +782,7 @@ function postActions(it) {
   const st = subState(it.id);
   const sub = !me.loggedIn || it.app !== 431960 ? ''
     : st === 'installed' ? `<span class="done">✓ 已订阅</span><a data-unsub="${it.id}">取消订阅</a>`
+    : st === 'subscribed' ? `<span class="done" title="订阅账号在 Steam 上已订阅，这台电脑上还没下载">✓ 已订阅 · 本机还没下载</span><a data-unsub="${it.id}">取消订阅</a>`
     : st === 'pending' ? `<span class="wait">已订阅 · 等待 Steam 下载</span><a data-unsub="${it.id}">取消订阅</a>`
     : `<button class="primary" data-sub="${it.id}">+ 订阅</button>`;
   return `${sub}<a data-works="${it.creator}">作者的全部作品</a><a data-cmt="${it.id}">评论</a><a data-steam="${it.id}">在 Steam 中打开</a><a data-web="${it.id}">网页</a>`;
@@ -881,6 +968,7 @@ async function select(id, fromOutside) {
   for (const t of document.querySelectorAll('.tile.sel')) t.classList.remove('sel');
   const tile = document.querySelector(`.tile[data-id="${id}"]`); if (tile) tile.classList.add('sel');
   if (views.timeline && views.timeline.ids.includes(id)) markSeen(id);
+  checkSubscribed(id);
   let it = items.get(id);
   if (!it || it.description == null) {
     if (!it) $('#detail').innerHTML = '<div class="none"><span class="spin"></span></div>';
@@ -944,7 +1032,9 @@ function renderActions(box, it) {
   const steam = h('<button>在 Steam 中打开</button>'); steam.onclick = () => host.call('open', { url: 'steam://url/CommunityFilePage/' + it.id });
   const web = h('<button class="ghost">网页</button>'); web.title = '在浏览器打开创意工坊页面'; web.onclick = () => host.call('open', { url: 'https://steamcommunity.com/sharedfiles/filedetails/?id=' + it.id });
   box.append(steam, web);
-  const msg = st === 'installed' ? '<div class="status ok">✓ 已订阅，已下载到本机</div>' : st === 'pending' ? '<div class="status wait">已订阅，等待 Steam 客户端下载（Steam 要在运行）</div>' : '';
+  const msg = st === 'installed' ? '<div class="status ok">✓ 已订阅，已下载到本机</div>'
+    : st === 'subscribed' ? '<div class="status ok">✓ 订阅账号在 Steam 上已订阅，这台电脑上还没下载（Steam 客户端要在运行）</div>'
+    : st === 'pending' ? '<div class="status wait">已订阅，等待 Steam 客户端下载（Steam 要在运行）</div>' : '';
   if (msg) box.appendChild(h(msg));
 }
 async function doSubscribe(it, on) {
@@ -952,6 +1042,8 @@ async function doSubscribe(it, on) {
     const ok = await host.call('subscribe', { id: it.id, on });
     if (!ok) throw new Error('Steam 没有确认');
     const to = twoAccounts() ? '订阅账号' : '';
+    const owner = subscriber().steamid;
+    if (S.subs && S.subs.owner === owner) { if (on) S.subs.ids[it.id] = 1; else delete S.subs.ids[it.id]; }
     if (on) { S.pending[it.id] = Date.now(); unsubscribed.delete(it.id); toast('已订阅「' + it.title + '」' + (to ? '到' + to : '') + '，Steam 客户端会自动下载'); }
     else { delete S.pending[it.id]; unsubscribed.add(it.id); toast('已' + (to ? '从' + to : '') + '取消订阅'); }
     save();
@@ -1060,7 +1152,7 @@ async function refreshInstalled() {
 // ---------- events from the host ----------
 async function onHostEvent(m) {
   if (m.event === 'theme') applyTheme(m.theme, m.accent);
-  else if (m.event === 'auth') { me = await host.call('status'); renderMe(); }
+  else if (m.event === 'auth') { me = await host.call('status'); renderMe(); loadSubs(); }
   else if (m.event === 'showItem') select(m.id, true);
 }
 function applyTheme(theme, accent) {
@@ -1106,6 +1198,7 @@ function applyTheme(theme, accent) {
   try { me = await host.call('status'); } catch (e) { me = { loggedIn: false }; }
   renderMe();
   if (me.loggedIn) loadFollows();
+  loadSubs(); setInterval(() => loadSubs(), 5 * 60e3);
   openTab(S.tab || 'timeline');
   // the timeline is the main view; load it in the background so the unread count shows even on other tabs
   if (me.loggedIn && S.tab !== 'timeline') { views.timeline = newView('timeline'); loadMore(views.timeline); }
