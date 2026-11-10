@@ -285,6 +285,10 @@ fun AccountSheet(open: Boolean, onDismiss: () -> Unit) {
                 Text("请登录电脑上 Steam 客户端用的那个账号，订阅的壁纸才会下载到那台电脑。", fontSize = 13.sp, modifier = Modifier.padding(vertical = 8.dp))
                 GlassButton("登录 Steam", onClick = { onDismiss(); LocalActions.login() }, primary = true)
             }
+            if (me.loggedIn) {
+                HorizontalDivider(Modifier.padding(vertical = 14.dp))
+                SubsStatus()
+            }
             HorizontalDivider(Modifier.padding(vertical = 14.dp))
             SwitchRow("合并同一作者的连续上传", "时间线里同一作者 6 小时内连着发的（最多 4 个）合成一条", ws.store.mergePosts) { ws.setMerge(it) }
             HorizontalDivider(Modifier.padding(vertical = 14.dp))
@@ -315,6 +319,28 @@ fun AccountSheet(open: Boolean, onDismiss: () -> Unit) {
                 GlassButton("查看日志", onClick = { onDismiss(); LocalActions.log() })
             }
         }
+    }
+}
+
+/** 订阅状态：从订阅账号的 Steam 订阅列表读的，在列表和详情里显示「已订阅」。 */
+@Composable
+private fun SubsStatus() {
+    val store = ws.store
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+            Text("订阅状态", fontWeight = FontWeight.Medium)
+            val known = store.remoteSubsOwner.isNotEmpty() && store.remoteSubsOwner == ws.subscriberId
+            Text(
+                when {
+                    ws.subsLoading -> "正在读取订阅列表…"
+                    known -> "订阅列表里有 ${store.remoteSubs.size} 个（" + ago(store.remoteSubsTime / 1000) + "读取）；打开详情时还会单独核对"
+                    else -> "还没读取订阅列表"
+                },
+                fontSize = 13.sp,
+            )
+            Text("Steam 网页可能不列出账号看不到的成人作品，这些只能在打开详情时核对。", fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+        }
+        GlassButton("刷新", onClick = { ws.loadRemoteSubs(force = true) }, enabled = !ws.subsLoading)
     }
 }
 

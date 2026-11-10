@@ -40,6 +40,12 @@ class Store(private val file: File, private val scope: CoroutineScope) {
     var mergePosts by mutableStateOf(false)
     var glass by mutableStateOf(true)
 
+    /** 从 Steam 读到的订阅列表（[remoteSubsOwner] 这个账号的），读取时间 [remoteSubsTime]（毫秒）。 */
+    val remoteSubs = mutableStateMapOf<String, Boolean>()
+    var remoteSubsOwner by mutableStateOf("")
+    var remoteSubsTime by mutableLongStateOf(0L)
+    var remoteSubsTotal by mutableIntStateOf(0)
+
     /** 登录过订阅账号（大号）：之后启动时才去读它的配置文件（不用时不初始化 WebView）。 */
     var subAccount by mutableStateOf(false)
 
@@ -79,6 +85,10 @@ class Store(private val file: File, private val scope: CoroutineScope) {
             mergePosts = o.optBoolean("mergePosts")
             glass = o.optBoolean("glass", true)
             subAccount = o.optBoolean("subAccount")
+            o.optJSONArray("remoteSubs")?.let { a -> a.strings().forEach { remoteSubs[it] = true } }
+            remoteSubsOwner = o.optString("remoteSubsOwner")
+            remoteSubsTime = o.optLong("remoteSubsTime")
+            remoteSubsTotal = o.optInt("remoteSubsTotal")
             glassBlur = o.optInt("glassBlur", 25).coerceIn(0, 100)
             glassTint = o.optInt("glassTint", 40).coerceIn(0, 100)
             glassFringe = o.optInt("glassFringe", 50).coerceIn(0, 100)
@@ -114,6 +124,10 @@ class Store(private val file: File, private val scope: CoroutineScope) {
         o.put("mergePosts", mergePosts)
         o.put("glass", glass)
         o.put("subAccount", subAccount)
+        o.put("remoteSubs", JSONArray(remoteSubs.keys.toList()))
+        o.put("remoteSubsOwner", remoteSubsOwner)
+        o.put("remoteSubsTime", remoteSubsTime)
+        o.put("remoteSubsTotal", remoteSubsTotal)
         o.put("glassBlur", glassBlur)
         o.put("glassTint", glassTint)
         o.put("glassFringe", glassFringe)

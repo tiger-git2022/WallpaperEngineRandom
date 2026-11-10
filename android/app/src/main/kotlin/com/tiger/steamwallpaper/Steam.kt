@@ -43,6 +43,11 @@ class Steam(
         const val UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
         private val STEAM_ID = Regex("^\\d{17}$")
 
+        private val SUB_IDS = listOf(
+            Regex("id=\"Subscription(\\d+)\""),
+            Regex("UnsubscribeItem\\(\\s*'(\\d+)'"),
+            Regex("data-publishedfileid=\"(\\d+)\""),
+        )
         private val COMMENT_TEXT = Regex("commentthread_comment_text\"[^>]*>(.*?)</div>\\s*<div class=\"comment_footer_ctn", RegexOption.DOT_MATCHES_ALL)
         private val COMMENT_AUTHOR = Regex("commentthread_author_link\"[^>]*>\\s*<bdi>(.*?)</bdi>", RegexOption.DOT_MATCHES_ALL)
         private val COMMENT_AVATAR = Regex("<img (?:src|srcset)=\"([^\"\\s]+)")
@@ -294,6 +299,44 @@ class Steam(
         }
         return CreatorPage(ids, total, following, hasButton)
     }
+
+    /** 订阅列表的一页（[ids] 是这一页的壁纸，[total] 是网页上写的总数）。 */
+    class SubsPage(val ids: List<String>, val total: Int)
+
+    /**
+     * 这个账号订阅的 WE 壁纸（自己的「已订阅的物品」网页，每页 30 个，page 从 1 开始）。网页会按账号的内容设置
+     * 隐藏一些成人作品，所以可能比实际少。页面上的登录账号不是自己时（登录过期）抛出异常。
+     */
+    suspend fun subscriptions(page: Int): SubsPage {
+        requireLogin()
+        val me = steamId
+        val html = get("$COMMUNITY/profiles/$me/myworkshopfiles/?appid=$APP_ID&browsefilter=mysubscriptions&numperpage=30&p=${maxOf(1, page)}")
+        if (pageAccount(html) != me) throw SteamException(401, "登录过期了，请重新登录")
+        val ids = LinkedHashSet<String>()
+        for (re in SUB_IDS) re.findAll(html).forEach { ids.add(it.groupValues[1]) }
+        // 上面几种写法都没有时，退一步认壁纸详情的链接
+        if (ids.isEmpty()) Regex("sharedfiles/filedetails/\\?id=(\\d+)").findAll(html).forEach { ids.add(it.groupValues[1]) }
+        var total = 0
+        Regex("workshopBrowsePagingInfo\">([^<]*)<").find(html)?.let { m ->
+            Regex("\\d+").findAll(m.groupValues[1].replace(",", "")).lastOrNull()?.let { total = it.value.toIntOrNull() ?: 0 }
+        }
+        return SubsPage(ids.toList(), total)
+    }
+
+    /**
+     * 打开壁纸的网页看这个账号订阅了没有（「订阅」按钮带 toggled）。网页不是以这个账号登录的、或者看不到按钮
+     * （比如被屏蔽的成人内容）时返回 null。
+     */
+    suspend fun subscribedOnPage(id: String): Boolean? {
+        if (!loggedIn || !Regex("^\\d{1,20}$").matches(id)) return null
+        val html = get("$COMMUNITY/sharedfiles/filedetails/?id=$id")
+        if (pageAccount(html) != steamId) return null
+        val btn = Regex("<a[^>]*id=\"SubscribeItemBtn\"[^>]*>").find(html)?.value ?: return null
+        return "toggled" in btn || Regex("class=\"subscribeOption subscribed[^\"]*selected").containsMatchIn(html)
+    }
+
+    /** 网页是以哪个账号登录打开的（g_steamID），没登录时为空。 */
+    private fun pageAccount(html: String): String = Regex("g_steamID = \"(\\d{17})\"").find(html)?.groupValues?.get(1) ?: ""
 
     /** 我在 Steam 上关注的玩家（创意工坊作者）。 */
     suspend fun following(): List<String> {
