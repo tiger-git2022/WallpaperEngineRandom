@@ -573,9 +573,9 @@ public partial class MainWindow : FluentWindow
 			_beforeCompact = new Rect(Left, Top, Width, Height);
 			SideBar.Visibility = Visibility.Collapsed;
 			SideCol.Width = new GridLength(0);
-			MinWidth = 380;
+			MinWidth = 240;
 			Rect work = SystemParameters.WorkArea;
-			Width = Math.Min(560, work.Width / 2);
+			Width = Math.Min(420, work.Width / 2);
 			Height = work.Height - 40;
 			Left = work.Right - Width - 20;
 			Top = work.Top + 20;
