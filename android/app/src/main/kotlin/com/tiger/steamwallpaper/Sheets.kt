@@ -13,6 +13,11 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.runtime.key
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -81,13 +86,48 @@ import kotlin.math.roundToInt
 fun DetailSheet() {
     val id = ws.detail
     var shown by remember { mutableStateOf<String?>(null) }
-    if (id != null) shown = id
+    var list by remember { mutableStateOf(emptyList<String>()) }
+    if (id != null) {
+        shown = id
+        list = ws.detailList
+    }
     GlassSheet(visible = id != null, onDismiss = { ws.detail = null }, maxHeight = 0.92f) { scroll ->
-        val it = shown?.let { ws.items[it] }
-        if (it == null) {
-            Box(Modifier.fillMaxWidth().height(240.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        if (list.size > 1) {
+            // 合并显示的一组：左右滑动切换
+            key(list) {
+                val pager = rememberPagerState(initialPage = list.indexOf(shown).coerceAtLeast(0)) { list.size }
+                LaunchedEffect(pager) {
+                    snapshotFlow { pager.settledPage }.collect { p ->
+                        val cur = list.getOrNull(p) ?: return@collect
+                        if (ws.detail != null && ws.detail != cur) ws.openDetail(cur, list)
+                    }
+                }
+                Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                    repeat(list.size) { i ->
+                        val on = i == pager.currentPage
+                        Box(
+                            Modifier.padding(horizontal = 3.dp).size(if (on) 8.dp else 6.dp).clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = if (on) 0.9f else 0.3f)),
+                        )
+                    }
+                    Text("  ${pager.currentPage + 1} / ${list.size}，左右滑动切换", fontSize = 12.sp)
+                }
+                HorizontalPager(pager, verticalAlignment = Alignment.Top, pageSpacing = 16.dp) { p ->
+                    val it = ws.items[list[p]]
+                    if (it == null) {
+                        Box(Modifier.fillMaxWidth().height(240.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                    } else {
+                        DetailContent(it, scroll)
+                    }
+                }
+            }
         } else {
-            DetailContent(it, scroll)
+            val it = shown?.let { ws.items[it] }
+            if (it == null) {
+                Box(Modifier.fillMaxWidth().height(240.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            } else {
+                DetailContent(it, scroll)
+            }
         }
     }
 }

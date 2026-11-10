@@ -84,6 +84,10 @@ class Workshop(val steam: Steam, val store: Store, private val scope: CoroutineS
     /** 详情面板显示的壁纸。 */
     var detail by mutableStateOf<String?>(null)
 
+    /** 详情面板里可以左右滑动切换的壁纸（合并显示的一组）；只有一个时不能滑。 */
+    var detailList by mutableStateOf<List<String>>(emptyList())
+        private set
+
     /** 搜索框里的文字和已经提交的搜索。 */
     var query by mutableStateOf("")
     var search by mutableStateOf("")
@@ -508,7 +512,8 @@ class Workshop(val steam: Steam, val store: Store, private val scope: CoroutineS
 
     // ---- details ----
 
-    fun openDetail(id: String) {
+    fun openDetail(id: String, list: List<String> = listOf(id)) {
+        detailList = if (id in list) list else listOf(id)
         detail = id
         if (timeline?.ids?.contains(id) == true) markSeen(id)
         val it = items[id]
