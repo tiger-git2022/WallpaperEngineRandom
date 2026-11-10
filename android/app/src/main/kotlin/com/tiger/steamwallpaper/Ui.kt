@@ -165,10 +165,14 @@ fun PreviewImage(
     }
 }
 
+/** 读到过的预览图宽高比（这次运行期间）。 */
+private val Ratios = HashMap<String, Float>()
+
 /** 整张图按自己的比例显示（不裁成方形），最高 [maxHeight]，居中。 */
 @Composable
 fun BigPicture(url: String, modifier: Modifier = Modifier, maxHeight: Dp = 480.dp, inner: Modifier = Modifier, onClick: () -> Unit) {
-    var ratio by remember(url) { mutableStateOf<Float?>(null) }
+    // 宽高比读到一次就记住（滑出屏幕再回来、在详情里再打开都不用重新撑开）；还不知道时按方形占位，预览图大多是方的
+    var ratio by remember(url) { mutableStateOf<Float?>(Ratios[url] ?: 1f) }
     BoxWithConstraints(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         val r = ratio
         val w: Dp
@@ -190,7 +194,11 @@ fun BigPicture(url: String, modifier: Modifier = Modifier, maxHeight: Dp = 480.d
             Modifier.size(w, h).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceVariant)
                 .then(inner).clickable(onClick = onClick),
         ) {
-            PreviewImage(url, animate = true, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit, onRatio = { if (ratio == null) ratio = it.coerceIn(0.4f, 3f) })
+            PreviewImage(url, animate = true, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit, onRatio = {
+                val r = it.coerceIn(0.4f, 3f)
+                Ratios[url] = r
+                ratio = r
+            })
         }
     }
 }
@@ -384,6 +392,7 @@ fun MoreFooter(v: ListView) {
 object LocalActions {
     var login: () -> Unit = {}
     var lightbox: (String) -> Unit = {}
+    var log: () -> Unit = {}
 }
 
 @Composable

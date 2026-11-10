@@ -119,6 +119,8 @@ fun WorkshopApp(activity: MainActivity) {
     var filterOpen by remember { mutableStateOf(false) }
     var accountOpen by remember { mutableStateOf(false) }
     var lightbox by remember { mutableStateOf<String?>(null) }
+    var logOpen by remember { mutableStateOf(false) }
+    LocalActions.log = { logOpen = true }
     var menu by remember { mutableStateOf<MenuRequest?>(null) }
     LocalActions.lightbox = { lightbox = it }
 
@@ -192,6 +194,7 @@ fun WorkshopApp(activity: MainActivity) {
             DetailSheet()
             FilterSheet(filterOpen) { filterOpen = false }
             AccountSheet(accountOpen) { accountOpen = false }
+            LogSheet(logOpen) { logOpen = false }
             UpdateSheet(activity)
             Lightbox(lightbox) { lightbox = null }
         }

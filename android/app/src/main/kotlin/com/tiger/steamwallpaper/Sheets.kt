@@ -305,7 +305,10 @@ fun AccountSheet(open: Boolean, onDismiss: () -> Unit) {
                     GlassButton("检查更新", onClick = { updater.check(manual = true) })
                 }
             }
-            GlassButton("在 GitHub 查看所有版本", onClick = { openUrl(context, "https://github.com/${BuildConfig.REPO}/releases") }, modifier = Modifier.padding(top = 12.dp))
+            Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                GlassButton("在 GitHub 查看所有版本", onClick = { openUrl(context, "https://github.com/${BuildConfig.REPO}/releases") })
+                GlassButton("查看日志", onClick = { onDismiss(); LocalActions.log() })
+            }
         }
     }
 }
@@ -334,6 +337,33 @@ private fun GlassSlider(title: String, summary: String, value: Int, show: (Int) 
             value = value.toFloat(), onValueChange = { onChange((it / 5f).roundToInt() * 5) },
             valueRange = 0f..100f, steps = 19,
         )
+    }
+}
+
+// ---- log ----
+
+/** 日志面板：App 的运行记录（读作者作品、订阅、出错……），可以复制发给开发者。 */
+@Composable
+fun LogSheet(open: Boolean, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    var text by remember { mutableStateOf("") }
+    LaunchedEffect(open) { if (open) text = Log.read().takeLast(60_000) }
+    GlassSheet(open, onDismiss, maxHeight = 0.9f) { scroll ->
+        SheetTitle("日志") {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                GlassButton("清空", onClick = { Log.clear(); text = "" })
+                GlassButton("复制", primary = true, onClick = {
+                    val cm = context.getSystemService(android.content.ClipboardManager::class.java)
+                    cm?.setPrimaryClip(android.content.ClipData.newPlainText("SteamWallpaper 日志", text))
+                    ws.toast("已复制日志")
+                })
+            }
+        }
+        val listState = rememberScrollState()
+        LaunchedEffect(text) { listState.scrollTo(listState.maxValue) }
+        SelectionContainer(scroll.verticalScroll(listState).padding(horizontal = 20.dp).padding(bottom = 18.dp)) {
+            Text(text.ifEmpty { "还没有日志" }, fontSize = 12.sp, lineHeight = 17.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+        }
     }
 }
 
