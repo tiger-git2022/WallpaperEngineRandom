@@ -143,6 +143,10 @@ public partial class MainWindow : FluentWindow
 			idx = 0;
 		}
 		_page = idx;
+		if (Compact && idx != 5)
+		{
+			SetCompact(false);
+		}
 		for (int i = 0; i < _pages.Length; i++)
 		{
 			_pages[i].Visibility = i == idx ? Visibility.Visible : Visibility.Collapsed;
@@ -536,6 +540,57 @@ public partial class MainWindow : FluentWindow
 			PageWorkshop.Child = _workshop;
 		}
 		return _workshop;
+	}
+
+	// ---- 小窗（查重时对比桌面上的壁纸） ----
+
+	private Rect? _beforeCompact;
+
+	private WindowState _stateBeforeCompact;
+
+	public bool Compact => _beforeCompact != null;
+
+	/// <summary>
+	/// 小窗：去掉左边的导航，窗口缩成屏幕右边的一条并且一直在最上面，点「应用」后直接看桌面对比。关掉时回到原来的位置和大小。
+	/// </summary>
+	public void SetCompact(bool on)
+	{
+		if (on == Compact)
+		{
+			return;
+		}
+		if (on)
+		{
+			_stateBeforeCompact = WindowState;
+			if (WindowState != WindowState.Normal)
+			{
+				WindowState = WindowState.Normal;
+			}
+			_beforeCompact = new Rect(Left, Top, Width, Height);
+			SideBar.Visibility = Visibility.Collapsed;
+			SideCol.Width = new GridLength(0);
+			MinWidth = 380;
+			Rect work = SystemParameters.WorkArea;
+			Width = Math.Min(560, work.Width / 2);
+			Height = work.Height - 40;
+			Left = work.Right - Width - 20;
+			Top = work.Top + 20;
+			Topmost = true;
+		}
+		else
+		{
+			Rect r = _beforeCompact.Value;
+			_beforeCompact = null;
+			Topmost = false;
+			SideBar.Visibility = Visibility.Visible;
+			SideCol.Width = new GridLength(220);
+			MinWidth = 860;
+			Left = r.Left;
+			Top = r.Top;
+			Width = r.Width;
+			Height = r.Height;
+			WindowState = _stateBeforeCompact;
+		}
 	}
 
 	/// <summary>切到创意工坊页并打开某个壁纸的详情。</summary>
