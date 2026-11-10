@@ -164,6 +164,16 @@ fun WorkshopApp(activity: MainActivity) {
                 }
             }
 
+            // 状态栏后面的渐变：列表滚上去时，文字不会和时间、电量叠在一起
+            val bg = MaterialTheme.colorScheme.background
+            Box(
+                Modifier.fillMaxWidth().height(status.calculateTopPadding() + 16.dp).background(
+                    androidx.compose.ui.graphics.Brush.verticalGradient(
+                        0f to bg.copy(alpha = 0.92f), 0.65f to bg.copy(alpha = 0.75f), 1f to bg.copy(alpha = 0f),
+                    ),
+                ),
+            )
+
             // 下拉刷新的那滴玻璃：画在页面上面，才能折射页面
             RefreshIndicator(refreshHost, Modifier.align(Alignment.TopCenter).padding(top = contentPadding.calculateTopPadding()))
 
@@ -325,12 +335,12 @@ private fun TabBar(modifier: Modifier) {
                 Box(Modifier.size(24.dp)) {
                     Icon(t.icon, contentDescription = null, tint = color, modifier = Modifier.fillMaxSize())
                     if (t.key == "timeline" && ws.unread > 0) {
-                        // 角标放在图标右上角的外面，不盖住图标
+                        // 角标放在图标右边、和图标居中对齐：不盖住图标，也不会被标签的圆角裁掉
                         Text(
                             if (ws.unread > 99) "99+" else ws.unread.toString(),
                             color = androidx.compose.ui.graphics.Color.White, fontSize = 10.sp, lineHeight = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1,
-                            modifier = Modifier.align(Alignment.TopStart).offset(x = 23.dp, y = (-4).dp)
-                                .wrapContentSize(Alignment.TopStart, unbounded = true)
+                            modifier = Modifier.align(Alignment.CenterStart).offset(x = 27.dp)
+                                .wrapContentSize(Alignment.CenterStart, unbounded = true)
                                 .clip(CircleShapeR).background(Tones.New).padding(horizontal = 5.dp, vertical = 1.dp),
                         )
                     }

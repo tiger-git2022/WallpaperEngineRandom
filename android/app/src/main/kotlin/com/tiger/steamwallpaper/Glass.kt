@@ -59,6 +59,12 @@ enum class GlassStyle {
 /** 页面内容（玻璃要折射的东西）；关掉液态玻璃时为 null。 */
 val LocalPageBackdrop = staticCompositionLocalOf<LayerBackdrop?> { null }
 
+/**
+ * 面板自己的那层模糊玻璃（录下来的），面板上的标签是折射它的小玻璃块（[GlassStyle.Tile]），和 EhViewer 分支展开的
+ * 搜索界面里的标签一样。不在面板里或关掉液态玻璃时为 null。
+ */
+val LocalTileBackdrop = staticCompositionLocalOf<LayerBackdrop?> { null }
+
 /** 录页面内容用的 backdrop；关掉液态玻璃时为 null。 */
 @Composable
 fun rememberGlassBackdrop(enabled: Boolean): LayerBackdrop? {
@@ -96,8 +102,7 @@ const val GLASS_TILE_TINT = 0.3f
  * 折射只支持圆角矩形（CornerBasedShape），别的形状在安卓 13 以上会抛异常。
  */
 @Composable
-fun Modifier.glass(shape: Shape, tint: Color, style: GlassStyle = GlassStyle.Control): Modifier {
-    val backdrop = LocalPageBackdrop.current
+fun Modifier.glass(shape: Shape, tint: Color, style: GlassStyle = GlassStyle.Control, backdrop: LayerBackdrop? = LocalPageBackdrop.current): Modifier {
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     if (backdrop == null) {
         // 没有液态玻璃：不透明一些的底色，再加阴影

@@ -95,6 +95,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -236,20 +238,20 @@ fun FollowButton(id: String, modifier: Modifier = Modifier) {
     if (!ws.me.loggedIn || id == ws.me.steamId) return
     val on = ws.isFollowing(id)
     val busy = ws.busy["follow:$id"] == true
+    // 关注和已关注一样大小，只是关注是实心的主题色
     if (on) {
         Pill(if (busy) "…" else "已关注", onClick = { ws.follow(id, false) }, modifier = modifier)
     } else {
-        Button(onClick = { ws.follow(id, true) }, modifier = modifier.heightIn(min = PillHeight), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)) {
-            if (busy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary) else Text("+ 关注", fontSize = 14.sp)
-        }
+        Pill(if (busy) "…" else "+ 关注", onClick = { ws.follow(id, true) }, modifier = modifier, primary = true)
     }
 }
 
-val PillHeight = 36.dp
+val PillHeight = 32.dp
 
 /**
- * 标签、筛选项和次要按钮：胶囊形。浅色主题是一层淡淡的底色、没有边框，深色主题是透明的底加白边（和 EhViewer 分支一样）；
- * 选中时是玻璃里的一块主题色的光。
+ * 标签、筛选项和次要按钮，照 EhViewer 分支展开的搜索界面里的标签：8 dp 圆角，32 dp 高，文字黑色（深色主题白色）。
+ * 在玻璃面板上是一小块玻璃，折射面板那层模糊的玻璃，没有边框，选中时玻璃里亮一块主题色；在页面上（折射不到页面自己）
+ * 是浅色主题淡淡的底色、深色主题透明底加白边。[primary] 是实心的主题色按钮（「+ 关注」）。
  */
 @Composable
 fun Pill(
@@ -260,21 +262,25 @@ fun Pill(
     enabled: Boolean = true,
     leading: ImageVector? = null,
     trailing: ImageVector? = null,
+    primary: Boolean = false,
 ) {
     val dark = isDark()
-    val shape = RoundedCornerShape(50)
+    val shape = PillShape
     val scheme = MaterialTheme.colorScheme
-    val content = (if (selected) scheme.primary else scheme.onSurface).let { if (enabled) it else it.copy(alpha = 0.4f) }
-    val fill = when {
-        selected -> glassSelectedColor()
-        dark -> Color.Transparent
-        else -> scheme.onSurface.copy(alpha = 0.07f)
+    val tile = LocalTileBackdrop.current
+    val content = (if (primary) scheme.onPrimary else scheme.onSurface).let { if (enabled) it else it.copy(alpha = 0.4f) }
+    val surface = when {
+        primary -> Modifier.clip(shape).background(scheme.primary, shape)
+        tile != null -> Modifier.glass(shape, scheme.surfaceBright, GlassStyle.Tile, tile).clip(shape)
+            .then(if (selected) Modifier.background(glassSelectedColor(), shape) else Modifier)
+        else -> Modifier.clip(shape)
+            .background(if (selected) glassSelectedColor() else if (dark) Color.Transparent else scheme.onSurface.copy(alpha = 0.07f), shape)
+            .then(if (dark) Modifier.border(1.dp, Color.White.copy(alpha = if (selected) 0.8f else 0.55f), shape) else Modifier)
     }
     Row(
-        modifier.heightIn(min = PillHeight).clip(shape).background(fill, shape)
-            .then(if (dark) Modifier.border(1.dp, Color.White.copy(alpha = if (selected) 0.8f else 0.55f), shape) else Modifier)
+        modifier.heightIn(min = PillHeight).then(surface)
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(start = if (leading != null) 12.dp else 16.dp, end = if (trailing != null) 10.dp else 16.dp, top = 4.dp, bottom = 4.dp),
+            .padding(start = if (leading != null) 8.dp else 14.dp, end = if (trailing != null) 8.dp else 14.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
     ) {
@@ -282,13 +288,15 @@ fun Pill(
             Icon(leading, null, tint = content, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
         }
-        Text(text, color = content, fontSize = 14.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1)
+        Text(text, color = content, fontSize = 14.sp, fontWeight = if (selected || primary) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1)
         if (trailing != null) {
             Spacer(Modifier.width(4.dp))
             Icon(trailing, null, tint = content, modifier = Modifier.size(18.dp))
         }
     }
 }
+
+val PillShape = RoundedCornerShape(8.dp)
 
 /** 一排会换行的胶囊，行和行之间留空。 */
 @Composable
@@ -484,16 +492,23 @@ fun GlassSheet(visible: Boolean, onDismiss: () -> Unit, maxHeight: Float = 0.9f,
                 }
             }
             val shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
-            run {
+            // 面板的玻璃单独一层，录下来给面板上的标签折射（EhViewer 分支展开的搜索界面也是这样）
+            val sheetBackdrop = if (LocalPageBackdrop.current != null) rememberLayerBackdrop() else null
+            Box(
+                Modifier.fillMaxWidth().heightIn(max = this@BoxWithConstraints.maxHeight * maxHeight)
+                    .offset { IntOffset(0, drag.value.roundToInt()) },
+            ) {
+                Box(
+                    Modifier.matchParentSize().then(if (sheetBackdrop != null) Modifier.layerBackdrop(sheetBackdrop) else Modifier)
+                        .bottomSheetGlass(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = GLASS_SHEET_TINT), 28.dp),
+                )
                 Column(
-                    Modifier.fillMaxWidth().heightIn(max = this@BoxWithConstraints.maxHeight * maxHeight)
-                        .padding(top = 0.dp)
-                        .offset { IntOffset(0, drag.value.roundToInt()) }
-                        .bottomSheetGlass(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = GLASS_SHEET_TINT), 28.dp)
+                    Modifier.fillMaxWidth()
                         .clip(shape)
                         .pointerInput(Unit) {}
                         .windowInsetsPadding(WindowInsets.navigationBars),
                 ) {
+                  CompositionLocalProvider(LocalTileBackdrop provides sheetBackdrop) {
                     // 拖动条
                     Box(
                         Modifier.fillMaxWidth().height(28.dp).draggable(
@@ -506,6 +521,7 @@ fun GlassSheet(visible: Boolean, onDismiss: () -> Unit, maxHeight: Float = 0.9f,
                         Box(Modifier.size(36.dp, 4.dp).clip(CircleShape).background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)))
                     }
                     content(Modifier.nestedScroll(connection))
+                  }
                 }
             }
         }

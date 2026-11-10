@@ -189,7 +189,7 @@ private fun ReadDivider(readUpTo: Long) {
 private fun PostCard(read: Boolean, content: @Composable () -> Unit) {
     Column(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .alpha(if (read) 0.82f else 1f).padding(14.dp),
+            .padding(14.dp),
     ) { content() }
 }
 
@@ -220,7 +220,7 @@ private fun SinglePost(it: Item, read: Boolean) {
 
 @Composable
 private fun GroupPost(post: Post) {
-    var open by remember(post.items[0].id) { mutableStateOf<String?>(null) }
+    val ids = post.items.map { it.id }
     PostCard(post.read) {
         val first = post.items[0]
         val last = post.items.last()
@@ -231,23 +231,18 @@ private fun GroupPost(post: Post) {
             post.items.chunked(cols).forEach { row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     row.forEach { item ->
-                        val selected = open == item.id
                         Column(Modifier.weight(1f)) {
                             Box(
                                 Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(10.dp))
                                     .background(MaterialTheme.colorScheme.surfaceVariant)
-                                    .then(if (selected) Modifier.border(BorderStroke(2.dp, MaterialTheme.colorScheme.primary), RoundedCornerShape(10.dp)) else Modifier)
                                     .trackSeen(item.id, ws.isNew(item))
-                                    .clickable {
-                                        open = if (selected) null else item.id
-                                        if (!selected) ws.markSeen(item.id)
-                                    },
+                                    .clickable { ws.openDetail(item.id, ids) },
                             ) {
                                 PreviewImage(item.preview, animate = true, modifier = Modifier.fillMaxSize())
                                 TileBadges(item, timeline = true)
                             }
                             Text(
-                                item.title, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                item.title, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 2, minLines = 2, overflow = TextOverflow.Ellipsis,
                                 fontWeight = if (ws.isNew(item)) FontWeight.SemiBold else FontWeight.Normal,
                                 modifier = Modifier.padding(start = 2.dp, top = 4.dp),
                             )
@@ -257,16 +252,10 @@ private fun GroupPost(post: Post) {
                 }
             }
         }
-        val opened = open?.let { ws.items[it] }
-        if (opened != null) {
-            HorizontalDivider(Modifier.padding(vertical = 10.dp))
-            WallpaperBody(opened, track = false)
-        } else {
-            HorizontalDivider(Modifier.padding(top = 10.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("点一张图查看详情和订阅", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-                TextButton(onClick = { ws.openAuthor(post.creator) }) { Text("作者的全部作品") }
-            }
+        HorizontalDivider(Modifier.padding(top = 10.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("点一张图查看，可以左右滑动切换", fontSize = 13.sp, modifier = Modifier.weight(1f))
+            TextButton(onClick = { ws.openAuthor(post.creator) }) { Text("作者的全部作品") }
         }
     }
 }
