@@ -9,6 +9,10 @@ on:
     branches: [main]
     tags:
       - "v*.*.*"
+    # 只改了安卓工坊 App 时不编译电脑版（安卓版由 android.yml 编译发布）；推送标签时 GitHub 不看这里的路径
+    paths-ignore:
+      - "android/**"
+      - ".github/workflows/android.yml"
   workflow_dispatch:
     inputs:
       version:

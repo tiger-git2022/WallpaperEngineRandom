@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 相框 -->
+    <path
+        android:fillColor="#3366C0F4"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:pathData="M38,36h32a8,8 0,0 1,8 8v22a8,8 0,0 1,-8 8h-32a8,8 0,0 1,-8 -8v-22a8,8 0,0 1,8 -8z" />
+    <!-- 山 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M33,70l13,-15l8,9l6,-6l15,12z" />
+    <!-- 太阳 -->
+    <path
+        android:fillColor="#66C0F4"
+        android:pathData="M62,47m-4.5,0a4.5,4.5 0,1 1,9 0a4.5,4.5 0,1 1,-9 0" />
+</vector>
