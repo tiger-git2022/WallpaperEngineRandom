@@ -780,7 +780,8 @@ class Workshop(val steam: Steam, val sub: Steam, val store: Store, private val s
                 }
                 if (on) {
                     store.subscribed[it.id] = System.currentTimeMillis()
-                    toast("已订阅「${it.title}」" + (if (sub.loggedIn) "到订阅账号" else "") + "，电脑上的 Steam 会自动下载")
+                    val name = if (it.title.length > 18) it.title.take(17) + "…" else it.title
+                    toast("已订阅「$name」" + (if (sub.loggedIn) "到订阅账号" else "") + "，电脑上的 Steam 会自动下载")
                 } else {
                     store.subscribed.remove(it.id)
                     toast("已取消订阅")
