@@ -194,7 +194,7 @@ fun FollowingPage() {
         }
         items(list, key = { it }) { id ->
             Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(MaterialTheme.colorScheme.surfaceContainerLow)
+                Modifier.fillMaxWidth().card(RoundedCornerShape(18.dp))
                     .clickable { ws.openAuthor(id) }.padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {

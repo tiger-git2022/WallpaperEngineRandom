@@ -188,7 +188,7 @@ private fun ReadDivider(readUpTo: Long) {
 @Composable
 private fun PostCard(read: Boolean, content: @Composable () -> Unit) {
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(MaterialTheme.colorScheme.surfaceContainerLow)
+        Modifier.fillMaxWidth().card(RoundedCornerShape(22.dp))
             .padding(14.dp),
     ) { content() }
 }
