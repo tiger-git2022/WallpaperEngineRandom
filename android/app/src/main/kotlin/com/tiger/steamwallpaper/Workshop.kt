@@ -134,6 +134,10 @@ class Workshop(val steam: Steam, val sub: Steam, val store: Store, private val s
     fun refreshLogin() {
         refreshSub()
         val changed = steam.syncCookies()
+        scope.launch {
+            // 登录状态都读完后（下面的 me 也更新了）再看订阅列表要不要读
+            loadRemoteSubs(force = store.remoteSubsOwner.isNotEmpty() && store.remoteSubsOwner != subscriber.steamId)
+        }
         if (!changed && me.steamId == steam.steamId) return
         me = Me(steam.loggedIn, steam.steamId, store.profiles[steam.steamId]?.name ?: "", store.profiles[steam.steamId]?.avatar ?: "")
         if (steam.loggedIn) {
@@ -600,6 +604,7 @@ class Workshop(val steam: Steam, val sub: Steam, val store: Store, private val s
     fun openDetail(id: String, list: List<String> = listOf(id)) {
         detailList = if (id in list) list else listOf(id)
         detail = id
+        checkSubscribed(id)
         if (timeline?.ids?.contains(id) == true) markSeen(id)
         val it = items[id]
         if (it == null || it.description == null) {
@@ -661,7 +666,76 @@ class Workshop(val steam: Steam, val sub: Steam, val store: Store, private val s
 
     // ---- subscribe ----
 
-    fun isSubscribed(id: String) = store.subscribed.containsKey(id)
+    /** 订阅用的账号的 Steam ID（Compose 状态，界面里读它会跟着变）。 */
+    val subscriberId: String get() = if (subMe.loggedIn) subMe.steamId else me.steamId
+
+    /** 在这个 App 里订阅过的，或者订阅账号在 Steam 上的订阅列表里有的。 */
+    fun isSubscribed(id: String) =
+        store.subscribed.containsKey(id) || (store.remoteSubsOwner.isNotEmpty() && store.remoteSubsOwner == subscriberId && store.remoteSubs.containsKey(id))
+
+    var subsLoading by mutableStateOf(false)
+        private set
+
+    /**
+     * 读订阅账号（没有时是浏览账号）在 Steam 上的订阅列表，在所有列表和详情里显示「已订阅」。半小时内读过就不重读，
+     * [force] 时（手动刷新、换了账号）一定读。
+     */
+    fun loadRemoteSubs(force: Boolean = false) {
+        val acct = subscriber
+        if (!acct.loggedIn || subsLoading) return
+        val owner = acct.steamId
+        if (!force && store.remoteSubsOwner == owner && System.currentTimeMillis() - store.remoteSubsTime < 30 * 60_000L) return
+        subsLoading = true
+        scope.launch {
+            try {
+                val all = LinkedHashSet<String>()
+                var page = 1
+                var total = 0
+                while (page <= 300) {
+                    val r = acct.subscriptions(page)
+                    total = maxOf(total, r.total)
+                    val before = all.size
+                    all.addAll(r.ids)
+                    if (r.ids.isEmpty() || all.size == before || (total > 0 && all.size >= total)) break
+                    page++
+                    delay(300)
+                }
+                if (acct.steamId == owner) {
+                    store.remoteSubs.clear()
+                    all.forEach { store.remoteSubs[it] = true }
+                    store.remoteSubsOwner = owner
+                    store.remoteSubsTime = System.currentTimeMillis()
+                    store.remoteSubsTotal = total
+                    store.save()
+                    Log.i("读取订阅列表（$owner）：网页上写共 $total 个，读到 ${all.size} 个（$page 页）")
+                    if (force) toast("已读取订阅列表：${all.size} 个")
+                }
+            } catch (e: Exception) {
+                Log.i("读取订阅列表失败（$owner）：${e.message}")
+                if (force) toast("读取订阅列表失败：" + errText(e), long = true)
+            }
+            subsLoading = false
+        }
+    }
+
+    /** 打开详情时到壁纸的网页上核对一下订阅账号订阅了没有（网页看不到时不改）。 */
+    private fun checkSubscribed(id: String) {
+        val acct = subscriber
+        if (!acct.loggedIn) return
+        val owner = acct.steamId
+        scope.launch {
+            val on = runCatching { acct.subscribedOnPage(id) }.getOrNull() ?: return@launch
+            if (store.remoteSubsOwner != owner) return@launch
+            val was = store.remoteSubs.containsKey(id)
+            if (on && !was) store.remoteSubs[id] = true
+            if (!on && was) store.remoteSubs.remove(id)
+            if (!on) store.subscribed.remove(id)
+            if (on != was) {
+                Log.i("壁纸 $id 的订阅状态按网页改为 " + (if (on) "已订阅" else "没订阅"))
+                store.save()
+            }
+        }
+    }
 
     fun subscribe(it: Item, on: Boolean) {
         val key = "sub:${it.id}"
@@ -670,6 +744,9 @@ class Workshop(val steam: Steam, val sub: Steam, val store: Store, private val s
         scope.launch {
             try {
                 subscriber.subscribe(it.id, on)
+                if (store.remoteSubsOwner == subscriber.steamId) {
+                    if (on) store.remoteSubs[it.id] = true else store.remoteSubs.remove(it.id)
+                }
                 if (on) {
                     store.subscribed[it.id] = System.currentTimeMillis()
                     toast("已订阅「${it.title}」" + (if (sub.loggedIn) "到订阅账号" else "") + "，电脑上的 Steam 会自动下载")
