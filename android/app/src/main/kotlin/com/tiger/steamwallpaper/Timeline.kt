@@ -379,14 +379,15 @@ fun TileBadges(it: Item, timeline: Boolean) {
 private fun SubToggle(it: Item, modifier: Modifier) {
     val sub = ws.isSubscribed(it.id)
     if (!ws.me.loggedIn || !it.isWallpaperEngine) {
-        if (sub) Badge("✓ 已订阅", background = Tones.Ok.copy(alpha = 0.92f), modifier = modifier)
+        if (sub) Badge("✓ 已订阅", background = Tones.Ok.copy(alpha = 0.55f), modifier = modifier)
         return
     }
     val busy = ws.busy["sub:${it.id}"] == true
     val shape = RoundedCornerShape(50)
     Row(
         modifier.height(28.dp).clip(shape)
-            .background(if (sub) Tones.Ok.copy(alpha = 0.92f) else androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.55f))
+            // 半透明：图片内容能透出来
+            .background(if (sub) Tones.Ok.copy(alpha = 0.55f) else androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.4f))
             .border(1.dp, androidx.compose.ui.graphics.Color.White.copy(alpha = 0.35f), shape)
             .clickable(enabled = !busy) { ws.subscribe(it, !sub) }
             .padding(horizontal = 10.dp),
@@ -397,7 +398,13 @@ private fun SubToggle(it: Item, modifier: Modifier) {
                 Modifier.size(14.dp), strokeWidth = 2.dp, color = androidx.compose.ui.graphics.Color.White,
             )
         } else {
-            Text(if (sub) "✓ 已订阅" else "+ 订阅", color = androidx.compose.ui.graphics.Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            // 底色透明了，白字加一层淡阴影，亮的图上也看得清
+            Text(
+                if (sub) "✓ 已订阅" else "+ 订阅", color = androidx.compose.ui.graphics.Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
+                style = androidx.compose.ui.text.TextStyle(
+                    shadow = androidx.compose.ui.graphics.Shadow(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f), blurRadius = 4f),
+                ),
+            )
         }
     }
 }
