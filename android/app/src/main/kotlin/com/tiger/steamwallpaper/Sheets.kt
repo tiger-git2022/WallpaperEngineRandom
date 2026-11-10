@@ -154,7 +154,7 @@ private fun DetailContent(it: Item, scroll: Modifier) {
         if (ws.isSubscribed(it.id)) {
             Text("已订阅，电脑上的 Steam 客户端会自动下载（Steam 要在运行）", fontSize = 12.sp, color = Tones.Ok, modifier = Modifier.padding(top = 6.dp))
         } else if (!ws.me.loggedIn) {
-            TextButton(onClick = { LocalActions.login() }) { Text("登录 Steam 后可以直接订阅") }
+            Pill("登录 Steam 后可以直接订阅", onClick = { LocalActions.login() }, primary = true, modifier = Modifier.padding(top = 10.dp))
         }
         Spacer(Modifier.height(12.dp))
         val total = (it.votesUp ?: 0) + (it.votesDown ?: 0)
@@ -220,7 +220,7 @@ private fun CommentList(id: String) {
         }
         c.error != null -> Row(verticalAlignment = Alignment.CenterVertically) {
             Text("评论读取失败：${c.error}", fontSize = 13.sp, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
-            TextButton(onClick = { ws.loadComments(id) }) { Text("重试") }
+            Pill("重试", onClick = { ws.loadComments(id) })
         }
         !c.done -> Pill("更多评论", onClick = { ws.loadComments(id) }, modifier = Modifier.padding(top = 6.dp))
     }
@@ -232,8 +232,10 @@ private fun CommentList(id: String) {
 fun FilterSheet(open: Boolean, onDismiss: () -> Unit) {
     GlassSheet(open, onDismiss, maxHeight = 0.85f) { scroll ->
         SheetTitle("筛选") {
-            TextButton(onClick = { ws.clearFilters() }, enabled = ws.store.filterCount > 0) { Text("清除筛选") }
-            TextButton(onClick = onDismiss) { Text("完成") }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Pill("清除筛选", onClick = { ws.clearFilters() }, enabled = ws.store.filterCount > 0)
+                Pill("完成", onClick = onDismiss, primary = true)
+            }
         }
         Column(scroll.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 18.dp)) {
             Text("组内任选一个即可，组和组之间都要满足；时间线和浏览都按这里筛选。", fontSize = 13.sp)
@@ -276,7 +278,7 @@ fun AccountSheet(open: Boolean, onDismiss: () -> Unit) {
             } else {
                 Text("还没有登录 Steam", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text("请登录电脑上 Steam 客户端用的那个账号，订阅的壁纸才会下载到那台电脑。", fontSize = 13.sp, modifier = Modifier.padding(vertical = 8.dp))
-                Button(onClick = { onDismiss(); LocalActions.login() }) { Text("登录 Steam") }
+                Pill("登录 Steam", onClick = { onDismiss(); LocalActions.login() }, primary = true)
             }
             HorizontalDivider(Modifier.padding(vertical = 14.dp))
             SwitchRow("合并同一作者的连续上传", "时间线里同一作者 6 小时内连着发的（最多 4 个）合成一条", ws.store.mergePosts) { ws.setMerge(it) }
@@ -300,10 +302,10 @@ fun AccountSheet(open: Boolean, onDismiss: () -> Unit) {
                 if (updater.checking) {
                     CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                 } else {
-                    TextButton(onClick = { updater.check(manual = true) }) { Text("检查更新") }
+                    Pill("检查更新", onClick = { updater.check(manual = true) })
                 }
             }
-            TextButton(onClick = { openUrl(context, "https://github.com/${BuildConfig.REPO}/releases") }, modifier = Modifier.padding(top = 4.dp)) { Text("在 GitHub 查看所有版本") }
+            Pill("在 GitHub 查看所有版本", onClick = { openUrl(context, "https://github.com/${BuildConfig.REPO}/releases") }, modifier = Modifier.padding(top = 12.dp))
         }
     }
 }
@@ -361,10 +363,10 @@ fun UpdateSheet(activity: Activity) {
                 Text(updater.message, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 10.dp))
             }
             Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Button(onClick = { updater.download(activity) }, enabled = p == null) { Text("下载并安装") }
+                Pill("下载并安装", onClick = { updater.download(activity) }, enabled = p == null, primary = true)
                 Pill("以后再说", onClick = { updater.skip() })
             }
-            TextButton(onClick = { openUrl(context, rel.page) }) { Text("打开发布页") }
+            Pill("打开发布页", onClick = { openUrl(context, rel.page) }, modifier = Modifier.padding(top = 12.dp))
         }
     }
 }

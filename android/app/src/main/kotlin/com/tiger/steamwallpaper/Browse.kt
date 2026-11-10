@@ -116,7 +116,7 @@ fun BrowsePage(onSort: (Rect) -> Unit, onFilter: () -> Unit) {
                     style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f),
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
-                if (v.search.isNotEmpty()) TextButton(onClick = { ws.clearSearch() }) { Text("清除搜索") }
+                if (v.search.isNotEmpty()) Pill("清除搜索", onClick = { ws.clearSearch() })
             }
             Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SortChip(onSort)

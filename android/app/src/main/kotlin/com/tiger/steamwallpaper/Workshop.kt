@@ -385,7 +385,7 @@ class Workshop(val steam: Steam, val store: Store, private val scope: CoroutineS
                     if (me.loggedIn && r.hasFollowButton) setFollow(v.author, r.following)
                     if (r.ids.isNotEmpty()) {
                         val order = r.ids.withIndex().associate { it.value to it.index }
-                        Item.parseList(steam.details(r.ids)).sortedBy { order[it.id] ?: 0 }.forEach {
+                        Item.parseList(r.json ?: steam.details(r.ids)).sortedBy { order[it.id] ?: 0 }.forEach {
                             val it2 = remember(it)
                             if (it2.id !in v.ids) v.ids.add(it2.id)
                         }

@@ -76,6 +76,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
@@ -268,14 +269,21 @@ fun Pill(
     val shape = PillShape
     val scheme = MaterialTheme.colorScheme
     val tile = LocalTileBackdrop.current
-    val content = (if (primary) scheme.onPrimary else scheme.onSurface).let { if (enabled) it else it.copy(alpha = 0.4f) }
-    val surface = when {
-        primary -> Modifier.clip(shape).background(scheme.primary, shape)
-        tile != null -> Modifier.glass(shape, scheme.surfaceBright, GlassStyle.Tile, tile).clip(shape)
-            .then(if (selected) Modifier.background(glassSelectedColor(), shape) else Modifier)
-        else -> Modifier.clip(shape)
-            .background(if (selected) glassSelectedColor() else if (dark) Color.Transparent else scheme.onSurface.copy(alpha = 0.07f), shape)
-            .then(if (dark) Modifier.border(1.dp, Color.White.copy(alpha = if (selected) 0.8f else 0.55f), shape) else Modifier)
+    val content = (if (primary) scheme.primary else scheme.onSurface).let { if (enabled) it else it.copy(alpha = 0.4f) }
+    // 主要操作（关注、订阅、登录）：玻璃里一层浓一些的主题色；选中的：淡一些的
+    val light = when {
+        primary -> scheme.primary.copy(alpha = if (dark) 0.34f else 0.18f)
+        selected -> glassSelectedColor()
+        else -> Color.Transparent
+    }
+    val surface = if (tile != null) {
+        Modifier.glass(shape, scheme.surfaceBright, GlassStyle.Tile, tile).clip(shape).background(light, shape)
+    } else {
+        // 页面里的按钮折射不到页面自己：磨砂的半透明底，浅色主题一圈柔和的阴影，深色主题一圈亮边
+        val frost = if (dark) Color.White.copy(alpha = 0.1f) else Color.White.copy(alpha = 0.78f)
+        (if (dark) Modifier else Modifier.shadow(3.dp, shape, ambientColor = Color.Black.copy(alpha = 0.25f), spotColor = Color.Black.copy(alpha = 0.25f)))
+            .clip(shape).background(frost, shape).background(light, shape)
+            .then(if (dark) Modifier.border(1.dp, Color.White.copy(alpha = if (selected || primary) 0.7f else 0.45f), shape) else Modifier)
     }
     Row(
         modifier.heightIn(min = PillHeight).then(surface)
@@ -317,10 +325,11 @@ fun SubscribeRow(it: Item, big: Boolean = false) {
     if (sub) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("✓ 已订阅", color = Tones.Ok, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.padding(start = 4.dp))
-            TextButton(onClick = { ws.subscribe(it, false) }) { Text("取消订阅", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            Spacer(Modifier.width(10.dp))
+            Pill("取消订阅", onClick = { ws.subscribe(it, false) })
         }
     } else {
-        Button(onClick = { ws.subscribe(it, true) }, modifier = if (big) Modifier.fillMaxWidth() else Modifier) { Text("+ 订阅") }
+        Pill("+ 订阅", onClick = { ws.subscribe(it, true) }, primary = true, modifier = if (big) Modifier.fillMaxWidth().heightIn(min = 44.dp) else Modifier)
     }
 }
 
@@ -346,9 +355,9 @@ fun MoreFooter(v: ListView) {
             }
             v.error != null -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("加载失败：${v.error}", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 16.dp))
-                Row {
-                    TextButton(onClick = { ws.loadMore(v) }) { Text("重试") }
-                    if (v.errorStatus == 401) TextButton(onClick = { LocalActions.login() }) { Text("重新登录") }
+                Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Pill("重试", onClick = { ws.loadMore(v) })
+                    if (v.errorStatus == 401) Pill("重新登录", onClick = { LocalActions.login() })
                 }
             }
             v.done && v.ids.isNotEmpty() -> Text("没有更多了", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
@@ -370,7 +379,7 @@ fun EmptyState(title: String, text: String, button: String? = null, onClick: () 
         Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center, lineHeight = 22.sp)
         if (button != null) {
             Spacer(Modifier.height(18.dp))
-            Button(onClick = onClick) { Text(button) }
+            Pill(button, onClick = onClick, primary = true)
         }
     }
 }
