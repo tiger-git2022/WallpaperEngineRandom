@@ -57,6 +57,19 @@ public sealed class SteamWorkshop
 
 	public bool LoggedIn => SteamId.Length > 0;
 
+	/// <summary>
+	/// steamLoginSecure 的到期时间（UTC，JWT 里的 exp），大约一天。过期后 Steam 把请求当成没登录（作者页只剩不带成人分级的几个作品），
+	/// 浏览器打开 Steam 页面时会用 login.steampowered.com 上长期的刷新票据自动换新，程序直接发的请求不会，所以要 <see cref="Renew"/>。
+	/// </summary>
+	public DateTime LoginExpires { get; private set; } = DateTime.MinValue;
+
+	/// <summary>续期：用这个账号的 WebView2 配置文件在看不见的地方打开一次 Steam 页面，然后重新读 cookie。由 WorkshopView 设置。</summary>
+	public Func<Task> Renew;
+
+	private Task _renewing;
+
+	private DateTime _lastRenew = DateTime.MinValue;
+
 	public event Action AuthChanged;
 
 	public sealed class Profile
@@ -126,6 +139,11 @@ public sealed class SteamWorkshop
 			{
 				id = decoded.Substring(0, bar);
 			}
+			LoginExpires = JwtExpiry(decoded.Substring(decoded.LastIndexOf('|') + 1));
+		}
+		else
+		{
+			LoginExpires = DateTime.MinValue;
 		}
 		// sessionid 只是防跨站的随机值，表单里和 cookie 里一样即可；还没有时自己生成一个
 		if (id.Length > 0 && !map.ContainsKey("sessionid"))
@@ -162,6 +180,66 @@ public sealed class SteamWorkshop
 		await SyncCookiesAsync(core);
 	}
 
+	/// <summary>JWT 里的 exp（UTC）；读不出来时当作还有效。</summary>
+	private static DateTime JwtExpiry(string jwt)
+	{
+		try
+		{
+			string[] parts = jwt.Split('.');
+			string b64 = parts[1].Replace('-', '+').Replace('_', '/');
+			b64 = b64.PadRight(b64.Length + (4 - b64.Length % 4) % 4, '=');
+			JObj payload = Json.ParseObj(System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(b64)));
+			double exp = payload.Num("exp");
+			if (exp > 0)
+			{
+				return new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddSeconds(exp);
+			}
+		}
+		catch
+		{
+		}
+		return DateTime.MaxValue;
+	}
+
+	/// <summary>登录票据快到期（或已过期）时续期，几个请求同时发现时只续一次。</summary>
+	private async Task EnsureFreshAsync(bool force = false)
+	{
+		if (!LoggedIn || Renew == null || (!force && LoginExpires > DateTime.UtcNow.AddMinutes(5)))
+		{
+			return;
+		}
+		Task t = _renewing;
+		if (t == null || t.IsCompleted)
+		{
+			// 续期失败（刷新票据也失效了）时别每个请求都重试
+			if ((DateTime.UtcNow - _lastRenew).TotalMinutes < 10)
+			{
+				return;
+			}
+			_lastRenew = DateTime.UtcNow;
+			_renewing = t = RenewOnceAsync();
+		}
+		await t;
+	}
+
+	private async Task RenewOnceAsync()
+	{
+		DateTime before = LoginExpires;
+		try
+		{
+			await Renew();
+		}
+		catch (Exception ex)
+		{
+			_log.Log("创意工坊：" + Label + " 续期登录出错：" + ex.Message);
+		}
+		_token = null;
+		_log.Log("创意工坊：" + Label + (LoginExpires > DateTime.UtcNow ? " 登录已续期，到 " + LoginExpires.ToLocalTime().ToString("MM-dd HH:mm") : " 续期失败（票据到 " + before.ToLocalTime().ToString("MM-dd HH:mm") + "），需要重新登录"));
+	}
+
+	/// <summary>登录票据还没过期（没登录时为 false）。</summary>
+	public bool LoginFresh => LoggedIn && LoginExpires > DateTime.UtcNow;
+
 	private static string RandomHex(int n)
 	{
 		var bytes = new byte[n / 2];
@@ -183,6 +261,29 @@ public sealed class SteamWorkshop
 
 	private async Task<string> GetCommunityAsync(string url, bool withCookies = true)
 	{
+		if (!withCookies || !LoggedIn)
+		{
+			return await SendGetAsync(url, withCookies);
+		}
+		await EnsureFreshAsync();
+		string text = await SendGetAsync(url, true);
+		// 网页上写着没登录：登录被 Steam 作废了，或者到期时间读错了；强制续期再试一次
+		if (LoggedIn && text.Contains(LoggedOutMark))
+		{
+			await EnsureFreshAsync(force: true);
+			text = await SendGetAsync(url, true);
+			if (text.Contains(LoggedOutMark))
+			{
+				throw new SteamException(401, Label + "的 Steam 登录过期了，请重新登录");
+			}
+		}
+		return text;
+	}
+
+	private const string LoggedOutMark = "g_steamID = false";
+
+	private async Task<string> SendGetAsync(string url, bool withCookies)
+	{
 		using var req = new HttpRequestMessage(HttpMethod.Get, url);
 		if (withCookies && _cookies.Count > 0)
 		{
@@ -200,6 +301,7 @@ public sealed class SteamWorkshop
 	private async Task<string> PostCommunityAsync(string url, Dictionary<string, string> form)
 	{
 		RequireLogin();
+		await EnsureFreshAsync();
 		using var req = new HttpRequestMessage(HttpMethod.Post, url) { Content = new FormUrlEncodedContent(form) };
 		req.Headers.Add("Cookie", CookieHeader());
 		req.Headers.Referrer = new Uri(Community + "/");

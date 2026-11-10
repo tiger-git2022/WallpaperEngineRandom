@@ -126,6 +126,7 @@ public sealed class WorkshopView : Grid
 			};
 			steam.AuthChanged += OnAuthChanged;
 			Unloaded += delegate { steam.AuthChanged -= OnAuthChanged; };
+			steam.Renew = () => RenewLoginAsync(steam, false);
 			await steam.SyncCookiesAsync(core);
 			await StartSubAsync(env);
 			core.Navigate(Host + "workshop.html?theme=" + (Dark() ? "dark" : "light") + "&accent=" + Uri.EscapeDataString(AccentHex()));
@@ -148,6 +149,7 @@ public sealed class WorkshopView : Grid
 			SteamWorkshop sub = Sub(_engine);
 			sub.AuthChanged += OnAuthChanged;
 			Unloaded += delegate { sub.AuthChanged -= OnAuthChanged; };
+			sub.Renew = () => RenewLoginAsync(sub, true);
 			await sub.SyncCookiesAsync(_subWeb.CoreWebView2);
 		}
 		catch (Exception ex)
@@ -165,6 +167,49 @@ public sealed class WorkshopView : Grid
 	}
 
 	private CoreWebView2 SubCore => _subWeb?.CoreWebView2 ?? throw new SteamException(0, "订阅账号用不了（WebView2 初始化失败，详见日志）");
+
+	/// <summary>
+	/// 登录票据（steamLoginSecure）大约一天过期。在看不见的 WebView2 里用这个账号的配置文件打开一次 Steam 页面，
+	/// Steam 会跳到 login.steampowered.com 用长期的刷新票据换一张新的再跳回来；然后重新读 cookie。
+	/// </summary>
+	private async Task RenewLoginAsync(SteamWorkshop steam, bool sub)
+	{
+		// 可能是在页面消息的回调里被调用的，WebView2 不允许在那里创建新的 WebView，先离开回调
+		await Task.Yield();
+		CoreWebView2Environment env = await steam.GetEnvironmentAsync();
+		var web = new WebView2 { Visibility = Visibility.Hidden, Width = 1, Height = 1, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
+		Children.Add(web);
+		try
+		{
+			if (sub)
+			{
+				await web.EnsureCoreWebView2Async(env, SubOptions(env));
+			}
+			else
+			{
+				await web.EnsureCoreWebView2Async(env);
+			}
+			CoreWebView2 core = web.CoreWebView2;
+			core.NewWindowRequested += (s, e) => e.Handled = true;
+			var back = new TaskCompletionSource<bool>();
+			core.NavigationCompleted += (s, e) =>
+			{
+				// 中间会经过 login.steampowered.com，回到 steamcommunity.com 才算完
+				if ((core.Source ?? "").StartsWith(SteamWorkshop.Community, StringComparison.OrdinalIgnoreCase))
+				{
+					back.TrySetResult(true);
+				}
+			};
+			core.Navigate(SteamWorkshop.Community + "/my/");
+			await Task.WhenAny(back.Task, Task.Delay(TimeSpan.FromSeconds(25)));
+			await steam.SyncCookiesAsync(core);
+		}
+		finally
+		{
+			Children.Remove(web);
+			web.Dispose();
+		}
+	}
 
 	private static bool Dark()
 	{
@@ -596,7 +641,8 @@ public sealed class WorkshopView : Grid
 						return;
 					}
 					await steam.SyncCookiesAsync(web.CoreWebView2);
-					if (steam.LoggedIn)
+					// 过期的旧票据也带着账号 id，要等 Steam 换成新的才算登录好了
+					if (steam.LoginFresh)
 					{
 						done = true;
 						win.Close();
