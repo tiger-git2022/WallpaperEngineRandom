@@ -77,7 +77,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          Get-ChildItem out -Recurse -Include *.pdb | Remove-Item -Force
+          Get-ChildItem out -Recurse -Include *.pdb, *.lib | Remove-Item -Force
           Copy-Item README.md, LICENSE, CHANGELOG.md out/
           $zip = "dist/WallpaperEngineRandom-v$env:VERSION-win-x64.zip"
           Compress-Archive -Path out/* -DestinationPath $zip

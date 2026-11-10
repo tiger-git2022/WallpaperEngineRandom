@@ -270,6 +270,31 @@ public sealed class WorkshopView : Grid
 	private void OnResource(object sender, CoreWebView2WebResourceRequestedEventArgs e)
 	{
 		string path = new Uri(e.Request.Uri).AbsolutePath.TrimStart('/');
+		CoreWebView2Environment env0 = _web.CoreWebView2.Environment;
+		if (path.StartsWith("dupe/", StringComparison.Ordinal))
+		{
+			// 查重页的封面：本机创意工坊目录里的，或者从 Steam 下载到 dupes\previews 的
+			string file;
+			lock (DupeImages)
+			{
+				DupeImages.TryGetValue(path.Substring(5), out file);
+			}
+			try
+			{
+				if (file != null && File.Exists(file))
+				{
+					string ext = Path.GetExtension(file).ToLowerInvariant();
+					string type = ext == ".gif" ? "image/gif" : ext == ".png" ? "image/png" : "image/jpeg";
+					e.Response = env0.CreateWebResourceResponse(new MemoryStream(File.ReadAllBytes(file)), 200, "OK", "Content-Type: " + type + "\r\nCache-Control: max-age=3600");
+					return;
+				}
+			}
+			catch
+			{
+			}
+			e.Response = env0.CreateWebResourceResponse(null, 404, "Not Found", "");
+			return;
+		}
 		string name = path == "workshop.html" ? "WERandom.workshop.html" : null;
 		Stream s = name == null ? null : typeof(WorkshopView).Assembly.GetManifestResourceStream(name);
 		CoreWebView2Environment env = _web.CoreWebView2.Environment;
@@ -451,6 +476,41 @@ public sealed class WorkshopView : Grid
 		}
 		case "installed":
 			return Json.Write(await Task.Run(InstalledIds), pretty: false);
+		case "dupeApply":
+		{
+			string id = args.Str("id");
+			if (!Regex.IsMatch(id, "^\\d{1,20}$"))
+			{
+				throw new ArgumentException("id 不对");
+			}
+			await Task.Run(() => _engine.ApplyForCompare(id));
+			return "true";
+		}
+		case "dupeScan":
+			return await DupeScanAsync(args.StrList("remote"));
+		case "devices":
+		{
+			// 先连一下页面上记着的无线地址（连不上就算了），再列出所有设备
+			foreach (string addr in args.StrList("connect"))
+			{
+				try
+				{
+					await Adb.ConnectAsync(addr);
+				}
+				catch
+				{
+				}
+			}
+			return DeviceJson(await Adb.DevicesAsync());
+		}
+		case "adbConnect":
+			return Json.Write(await Adb.ConnectAsync(args.Str("address")));
+		case "deviceTrash":
+		{
+			List<string> moved = await Adb.TrashAsync(args.Str("serial"), args.Str("library"), args.StrList("ids"));
+			_engine.Log.Log("查重：从设备 " + args.Str("serial") + " 挪到 wer_trash：" + string.Join(", ", moved));
+			return Json.Write(moved.Cast<object>().ToList(), pretty: false);
+		}
 		case "loadState":
 			return File.Exists(StatePath) ? Json.Write(File.ReadAllText(StatePath, Encoding.UTF8)) : "null";
 		case "saveState":
@@ -540,6 +600,210 @@ public sealed class WorkshopView : Grid
 		catch
 		{
 		}
+	}
+
+	// ---- 查重（同一内容的壁纸）和平板 / 手机 ----
+
+	private static DupeFinder _dupes;
+
+	private static Task<string> _dupeScan;
+
+	private static readonly System.Net.Http.HttpClient Download = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromMinutes(30) };
+
+	/// <summary>页面里封面图片的地址 dupe/&lt;key&gt; 对应的文件（扫描时填）。</summary>
+	private static readonly Dictionary<string, string> DupeImages = new Dictionary<string, string>();
+
+	private DupeFinder Dupes => _dupes ??= new DupeFinder(_engine.Dir, _engine.Log);
+
+	private void DupeProgress(string text)
+	{
+		Dispatcher.BeginInvoke((Action)delegate { Post(Json.Write(new JObj { ["event"] = "dupeProgress", ["text"] = text }, pretty: false)); });
+	}
+
+	/// <summary>同一时间只扫一次；扫描中再调用就等那一次的结果。remote：只在平板 / 手机上的壁纸 id，封面从 Steam 下载。</summary>
+	private Task<string> DupeScanAsync(List<string> remote)
+	{
+		if (_dupeScan != null && !_dupeScan.IsCompleted)
+		{
+			return _dupeScan;
+		}
+		return _dupeScan = DupeScanCoreAsync(remote);
+	}
+
+	private async Task<string> DupeScanCoreAsync(List<string> remote)
+	{
+		DupeProgress("正在读取本机的壁纸…");
+		List<JObj> local = await Task.Run(LocalWallpapers);
+		var sources = new List<DupeFinder.Source>();
+		var info = new Dictionary<string, JObj>();
+		foreach (JObj o in local)
+		{
+			string file = o.Str("file");
+			sources.Add(new DupeFinder.Source { Key = o.Str("id"), Image = file });
+			info[o.Str("id")] = o;
+			o.Remove("file");
+		}
+		remote = (remote ?? new List<string>()).Where(id => Regex.IsMatch(id, "^\\d{1,20}$") && !info.ContainsKey(id)).Distinct().ToList();
+		if (remote.Count > 0)
+		{
+			DupeProgress("正在下载平板 / 手机上的壁纸的封面…");
+			foreach (KeyValuePair<string, string> kv in await RemotePreviewsAsync(remote))
+			{
+				sources.Add(new DupeFinder.Source { Key = "r:" + kv.Key, Image = kv.Value });
+			}
+		}
+		await Dupes.EnsureModelAsync(Download, DupeProgress, default);
+		List<DupeFinder.Entry> entries = await Task.Run(() => Dupes.Embed(sources, (done, total) => DupeProgress("正在分析封面：" + done + " / " + total), default));
+		DupeProgress("正在比较…");
+		List<DupeFinder.Pair> pairs = await Task.Run(() => DupeFinder.Pairs(entries, 0.65f, 40000));
+		lock (DupeImages)
+		{
+			DupeImages.Clear();
+			foreach (DupeFinder.Source s in sources)
+			{
+				DupeImages[s.Key.Replace(":", "_")] = s.Image;
+			}
+		}
+		var items = new List<object>();
+		foreach (DupeFinder.Entry e in entries)
+		{
+			bool isRemote = e.Key.StartsWith("r:");
+			JObj o = isRemote ? new JObj { ["id"] = e.Key.Substring(2), ["remote"] = true } : info[e.Key];
+			o["img"] = "dupe/" + e.Key.Replace(":", "_");
+			items.Add(o);
+		}
+		var list = new List<object>();
+		foreach (DupeFinder.Pair p in pairs)
+		{
+			list.Add(new List<object> { p.A, p.B, (int)Math.Round(p.Score * 1000) });
+		}
+		_engine.Log.Log("查重：" + entries.Count + " 个壁纸（" + remote.Count + " 个只在平板 / 手机上），相似度 0.65 以上的组合 " + pairs.Count + " 个");
+		DupeProgress("");
+		return Json.Write(new JObj { ["items"] = items, ["pairs"] = list }, pretty: false);
+	}
+
+	/// <summary>本机创意工坊目录里每个壁纸：id、标题、类型、封面文件、大小、下载时间。</summary>
+	private List<JObj> LocalWallpapers()
+	{
+		var list = new List<JObj>();
+		foreach (string root in _engine.ResolvePaths().Workshop)
+		{
+			if (!Directory.Exists(root))
+			{
+				continue;
+			}
+			foreach (string dir in Directory.GetDirectories(root))
+			{
+				string id = Path.GetFileName(dir);
+				if (!Regex.IsMatch(id, "^\\d+$"))
+				{
+					continue;
+				}
+				try
+				{
+					JObj pj = File.Exists(Path.Combine(dir, "project.json")) ? Json.ParseObj(File.ReadAllText(Path.Combine(dir, "project.json"), Encoding.UTF8)) : new JObj();
+					string preview = new[] { pj.Str("preview"), "preview.gif", "preview.jpg", "preview.png", "preview.jpeg" }
+						.Where(n => !string.IsNullOrEmpty(n) && n.IndexOfAny(Path.GetInvalidFileNameChars()) < 0).Select(n => Path.Combine(dir, n)).FirstOrDefault(File.Exists);
+					if (preview == null)
+					{
+						continue;
+					}
+					// 大小；下载时间取最新文件的修改时间（文件夹本身的日期在整个库被复制过时不准）
+					long bytes = 0;
+					DateTime newest = DateTime.MinValue;
+					foreach (string f in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+					{
+						var fi = new FileInfo(f);
+						bytes += fi.Length;
+						if (fi.LastWriteTimeUtc > newest)
+						{
+							newest = fi.LastWriteTimeUtc;
+						}
+					}
+					list.Add(new JObj
+					{
+						["id"] = id,
+						["title"] = pj.Str("title"),
+						["type"] = pj.Str("type"),
+						["file"] = preview,
+						["bytes"] = bytes,
+						["added"] = (long)((newest > DateTime.MinValue ? newest : Directory.GetCreationTimeUtc(dir)) - new DateTime(1970, 1, 1)).TotalSeconds
+					});
+				}
+				catch
+				{
+				}
+			}
+		}
+		return list;
+	}
+
+	/// <summary>只在设备上的壁纸：从 Steam 读封面地址，下载到 dupes\previews（已经下载过的不再下载）。返回 id → 文件。</summary>
+	private async Task<Dictionary<string, string>> RemotePreviewsAsync(List<string> ids)
+	{
+		var result = new Dictionary<string, string>();
+		Directory.CreateDirectory(Dupes.RemoteDir);
+		var need = new List<string>();
+		foreach (string id in ids)
+		{
+			string have = Directory.GetFiles(Dupes.RemoteDir, id + ".*").FirstOrDefault(f => !f.EndsWith(".part"));
+			if (have != null)
+			{
+				result[id] = have;
+			}
+			else
+			{
+				need.Add(id);
+			}
+		}
+		for (int i = 0; i < need.Count; i += 100)
+		{
+			List<string> batch = need.Skip(i).Take(100).ToList();
+			JObj resp;
+			try
+			{
+				resp = Json.ParseObj(await Steam(_engine).DetailsAsync(batch)).Obj("response");
+			}
+			catch (Exception ex)
+			{
+				_engine.Log.Log("查重：读设备上壁纸的详情失败：" + ex.Message);
+				continue;
+			}
+			foreach (object x in resp?.List("publishedfiledetails") ?? new List<object>())
+			{
+				if (!(x is JObj f) || f.Int("result") != 1 || f.Str("preview_url").Length == 0)
+				{
+					continue;
+				}
+				string id = f.Str("publishedfileid");
+				try
+				{
+					using System.Net.Http.HttpResponseMessage r = await Download.GetAsync(f.Str("preview_url"));
+					r.EnsureSuccessStatusCode();
+					byte[] bytes = await r.Content.ReadAsByteArrayAsync();
+					string ext = bytes.Length > 3 && bytes[0] == 'G' && bytes[1] == 'I' && bytes[2] == 'F' ? ".gif" : bytes.Length > 1 && bytes[0] == 0x89 ? ".png" : ".jpg";
+					string file = Path.Combine(Dupes.RemoteDir, id + ext);
+					File.WriteAllBytes(file, bytes);
+					result[id] = file;
+				}
+				catch (Exception ex)
+				{
+					_engine.Log.Log("查重：下载封面 " + id + " 失败：" + ex.Message);
+				}
+			}
+			DupeProgress("正在下载平板 / 手机上的壁纸的封面：" + Math.Min(need.Count, i + 100) + " / " + need.Count);
+		}
+		return result;
+	}
+
+	private static string DeviceJson(List<Adb.Device> devices)
+	{
+		var list = new List<object>();
+		foreach (Adb.Device d in devices)
+		{
+			list.Add(new JObj { ["serial"] = d.Serial, ["model"] = d.Model, ["library"] = d.Library ?? "", ["ids"] = d.Ids.Cast<object>().ToList(), ["error"] = d.Error ?? "" });
+		}
+		return Json.Write(list, pretty: false);
 	}
 
 	/// <summary>本机创意工坊目录里已经下载的壁纸 ID（= 已订阅并下载完成）。</summary>
