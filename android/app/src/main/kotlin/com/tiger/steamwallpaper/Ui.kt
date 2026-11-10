@@ -393,6 +393,7 @@ object LocalActions {
     var login: () -> Unit = {}
     var lightbox: (String) -> Unit = {}
     var log: () -> Unit = {}
+    var loginSub: () -> Unit = {}
 }
 
 @Composable

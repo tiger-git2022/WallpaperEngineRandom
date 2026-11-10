@@ -44,13 +44,21 @@ import androidx.compose.ui.viewinterop.AndroidView
  * 页面离开了 /login）后自动关闭；按返回键或 × 取消。
  */
 class LoginActivity : ComponentActivity() {
+    companion object {
+        /** true：登录订阅账号（大号），存在 WebView 的另一个配置文件里（[SubProfile]）。 */
+        const val EXTRA_SUB = "sub"
+    }
+
     private var web: WebView? = null
+    private val sub by lazy { intent.getBooleanExtra(EXTRA_SUB, false) }
+
+    private fun cookies(): CookieManager = if (sub) SubProfile.cookieManager() ?: CookieManager.getInstance() else CookieManager.getInstance()
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        val cm = CookieManager.getInstance()
+        val cm = cookies()
         cm.setAcceptCookie(true)
         setContent {
             WorkshopTheme {
@@ -65,9 +73,9 @@ class LoginActivity : ComponentActivity() {
                         Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                             IconButton(onClick = { finish() }) { Icon(Icons.Default.Close, contentDescription = "取消") }
                             Column(Modifier.weight(1f)) {
-                                Text("登录 Steam", style = MaterialTheme.typography.titleMedium)
+                                Text(if (sub) "登录订阅账号" else "登录 Steam", style = MaterialTheme.typography.titleMedium)
                                 Text(
-                                    "请登录电脑上 Steam 客户端用的账号，订阅的壁纸才会下载到那台电脑",
+                                    if (sub) "请登录电脑上 Steam 客户端用的账号（大号），订阅会加到这个号上" else "浏览、关注、时间线都用这个账号；订阅可以另外指定一个账号",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -81,6 +89,11 @@ class LoginActivity : ComponentActivity() {
                             factory = { ctx ->
                                 WebView(ctx).also { w ->
                                     web = w
+                                    // 订阅账号：用另一个配置文件，不覆盖浏览账号的登录
+                                    if (sub && !SubProfile.use(w)) {
+                                        finish()
+                                        return@also
+                                    }
                                     w.settings.javaScriptEnabled = true
                                     w.settings.domStorageEnabled = true
                                     cm.setAcceptThirdPartyCookies(w, true)
@@ -108,9 +121,10 @@ class LoginActivity : ComponentActivity() {
 
     private fun check(url: String?) {
         if (isFinishing || url == null || "/login" in url) return
-        val ck = CookieManager.getInstance().getCookie(Steam.COMMUNITY)
+        val cm = cookies()
+        val ck = cm.getCookie(Steam.COMMUNITY)
         if (ck != null && "steamLoginSecure=" in ck) {
-            CookieManager.getInstance().flush()
+            cm.flush()
             setResult(RESULT_OK)
             finish()
         }

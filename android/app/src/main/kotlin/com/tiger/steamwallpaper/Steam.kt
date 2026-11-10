@@ -26,7 +26,14 @@ class SteamException(val status: Int, message: String) : Exception(message)
  * - 作者名字和头像：公开的个人资料 ?xml=1
  * 登录状态就是登录页 WebView 的 cookie（CookieManager 在整个 App 里共用，存在 App 私有目录）。
  */
-class Steam {
+/**
+ * 一个 Steam 账号的会话。[cookieSource] 是存它的登录 cookie 的 CookieManager（浏览账号用系统默认的，订阅账号用
+ * WebView 的另一个配置文件，见 [SubProfile]）；为 null 时算没登录。[client] 给第二个账号共用连接。
+ */
+class Steam(
+    private val cookieSource: () -> CookieManager? = { CookieManager.getInstance() },
+    client: OkHttpClient? = null,
+) {
     companion object {
         const val APP_ID = "431960"
         const val COMMUNITY = "https://steamcommunity.com"
@@ -50,7 +57,7 @@ class Steam {
 
     class CreatorPage(val ids: List<String>, val total: Int, val following: Boolean, val hasFollowButton: Boolean)
 
-    val http: OkHttpClient = OkHttpClient.Builder()
+    val http: OkHttpClient = client ?: OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .addInterceptor { chain ->
@@ -80,7 +87,13 @@ class Steam {
 
     /** 从 CookieManager 读 steamcommunity.com 的 cookie，并据此判断登录的是谁。返回登录的账号是否变了。在主线程调用。 */
     fun syncCookies(): Boolean {
-        val cm = CookieManager.getInstance()
+        val cm = cookieSource() ?: run {
+            if (steamId.isEmpty()) return false
+            cookies = emptyMap()
+            steamId = ""
+            synchronized(this) { token = null }
+            return true
+        }
         val map = LinkedHashMap<String, String>()
         cm.getCookie(COMMUNITY)?.split(';')?.forEach { part ->
             val eq = part.indexOf('=')
@@ -108,9 +121,10 @@ class Steam {
     }
 
     fun logout() {
-        val cm = CookieManager.getInstance()
-        cm.removeAllCookies(null)
-        cm.flush()
+        cookieSource()?.let { cm ->
+            cm.removeAllCookies(null)
+            cm.flush()
+        }
         cookies = emptyMap()
         steamId = ""
         synchronized(this) { token = null }

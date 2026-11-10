@@ -151,6 +151,9 @@ private fun DetailContent(it: Item, scroll: Modifier) {
             FollowButton(it.creator)
         }
         Box(Modifier.padding(top = 14.dp)) { SubscribeRow(it, big = true) }
+        if (ws.subMe.loggedIn && ws.me.loggedIn) {
+            Text("订阅到订阅账号「${ws.subMe.name.ifEmpty { ws.subMe.steamId }}」", fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+        }
         if (ws.isSubscribed(it.id)) {
             Text("已订阅，电脑上的 Steam 客户端会自动下载（Steam 要在运行）", fontSize = 12.sp, color = Tones.Ok, modifier = Modifier.padding(top = 6.dp))
         } else if (!ws.me.loggedIn) {
@@ -272,9 +275,11 @@ fun AccountSheet(open: Boolean, onDismiss: () -> Unit) {
                     GlassButton("退出登录", onClick = { ws.logout(); onDismiss() })
                 }
                 Text(
-                    "订阅会加到这个账号上，由登录同一账号的电脑 Steam 客户端下载。",
+                    if (ws.subMe.loggedIn) "浏览账号：时间线、浏览、关注都用这个号。" else "时间线、浏览、关注和订阅都用这个号；订阅可以在下面另外指定一个账号。",
                     fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp),
                 )
+                HorizontalDivider(Modifier.padding(vertical = 14.dp))
+                SubAccount()
             } else {
                 Text("还没有登录 Steam", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text("请登录电脑上 Steam 客户端用的那个账号，订阅的壁纸才会下载到那台电脑。", fontSize = 13.sp, modifier = Modifier.padding(vertical = 8.dp))
@@ -309,6 +314,36 @@ fun AccountSheet(open: Boolean, onDismiss: () -> Unit) {
                 GlassButton("在 GitHub 查看所有版本", onClick = { openUrl(context, "https://github.com/${BuildConfig.REPO}/releases") })
                 GlassButton("查看日志", onClick = { onDismiss(); LocalActions.log() })
             }
+        }
+    }
+}
+
+/** 订阅账号（大号）：只负责订阅，比如看不了成人内容的大号；可以把它的关注导入浏览账号。 */
+@Composable
+private fun SubAccount() {
+    val s = ws.subMe
+    Text("订阅账号", fontWeight = FontWeight.Medium)
+    when {
+        s.loggedIn -> {
+            Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Avatar(s.avatar, 44.dp)
+                Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                    Text(s.name.ifEmpty { "Steam 账号" }, fontWeight = FontWeight.SemiBold)
+                    Text(s.steamId, fontSize = 12.sp)
+                }
+                GlassButton("退出", onClick = { ws.logoutSub() })
+            }
+            Text("订阅会加到这个号上，由登录这个号的电脑 Steam 客户端下载。", fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
+            val busy = ws.importing
+            Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                GlassButton(busy ?: "把它的关注导入浏览账号", onClick = { ws.importFollows() }, enabled = busy == null)
+            }
+            Text("用浏览账号关注订阅账号关注的作者（只加不减），之后关注不同步。", fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+        }
+        !SubProfile.supported -> Text("这台手机的系统 WebView 太旧，不能同时登录第二个账号；请在应用商店更新「Android System WebView」。", fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+        else -> {
+            Text("没有登录时订阅用上面的账号。如果电脑上用的大号看不了成人内容，可以用小号浏览，在这里登录大号只负责订阅。", fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+            GlassButton("登录订阅账号", onClick = { LocalActions.loginSub() }, primary = true, modifier = Modifier.padding(top = 10.dp))
         }
     }
 }

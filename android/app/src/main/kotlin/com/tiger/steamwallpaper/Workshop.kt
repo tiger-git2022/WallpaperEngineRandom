@@ -66,8 +66,19 @@ class AuthorScreen(val steamId: String) {
  * 整个创意工坊的状态和逻辑，照搬电脑版 workshop.html 的脚本：列表的加载、时间线的阅读进度、关注、订阅、作者资料。
  * 界面（Compose）只读这里的状态、调这里的方法。只在主线程上用。
  */
-class Workshop(val steam: Steam, val store: Store, private val scope: CoroutineScope) {
+class Workshop(val steam: Steam, val sub: Steam, val store: Store, private val scope: CoroutineScope) {
     var me by mutableStateOf(Me())
+        private set
+
+    /** 订阅账号（大号）：只负责订阅；没登录时订阅用浏览账号。 */
+    var subMe by mutableStateOf(Me())
+        private set
+
+    /** 订阅用的账号。 */
+    private val subscriber: Steam get() = if (sub.loggedIn) sub else steam
+
+    /** 正在从订阅账号导入关注：进度文字；null = 没在导入。 */
+    var importing by mutableStateOf<String?>(null)
         private set
 
     /** 读到过的壁纸，ID → 壁纸。 */
@@ -116,6 +127,7 @@ class Workshop(val steam: Steam, val store: Store, private val scope: CoroutineS
 
     /** 重新读登录状态（启动、登录页关闭、回到前台时）。账号变了就重新加载。 */
     fun refreshLogin() {
+        refreshSub()
         val changed = steam.syncCookies()
         if (!changed && me.steamId == steam.steamId) return
         me = Me(steam.loggedIn, steam.steamId, store.profiles[steam.steamId]?.name ?: "", store.profiles[steam.steamId]?.avatar ?: "")
@@ -130,6 +142,74 @@ class Workshop(val steam: Steam, val store: Store, private val scope: CoroutineS
             }
         }
         if (changed) afterLogin()
+    }
+
+    private fun refreshSub() {
+        if (!sub.syncCookies() && subMe.steamId == sub.steamId) return
+        val id = sub.steamId
+        subMe = Me(sub.loggedIn, id, store.profiles[id]?.name ?: "", store.profiles[id]?.avatar ?: "")
+        if (!sub.loggedIn) return
+        scope.launch {
+            val p = steam.profile(id)
+            if (p.name.isNotEmpty() && subMe.steamId == p.steamId) {
+                subMe = subMe.copy(name = p.name, avatar = p.avatar)
+                store.profiles[p.steamId] = CachedProfile(p.name, p.avatar, System.currentTimeMillis())
+                store.save()
+            }
+        }
+    }
+
+    /** 订阅账号登录页关闭后。 */
+    fun afterSubLogin() {
+        store.subAccount = true
+        store.save()
+        refreshSub()
+        if (subMe.loggedIn) toast(if (subMe.steamId == me.steamId) "订阅账号和浏览账号是同一个号" else "已登录订阅账号，订阅会加到这个号上")
+    }
+
+    fun logoutSub() {
+        sub.logout()
+        refreshSub()
+        toast("已退出订阅账号，订阅改用浏览账号")
+    }
+
+    /** 把订阅账号（大号）关注的作者用浏览账号（小号）也关注上；只加不减。 */
+    fun importFollows() {
+        if (!sub.loggedIn || !me.loggedIn || importing != null) return
+        importing = "正在读取订阅账号的关注…"
+        scope.launch {
+            try {
+                val theirs = sub.following()
+                val todo = theirs.filter { it !in store.follows && it != me.steamId }
+                ensureProfiles(todo)
+                var ok = 0
+                var failed = 0
+                for ((i, id) in todo.withIndex()) {
+                    importing = "正在关注 ${i + 1} / ${todo.size}"
+                    val done = runCatching { steam.follow(id, true) }.getOrDefault(false)
+                    if (done) {
+                        ok++
+                        setFollow(id, true)
+                    } else {
+                        failed++
+                    }
+                    delay(400)
+                }
+                Log.i("从订阅账号导入关注：它关注 ${theirs.size} 个，新关注 $ok 个，失败 $failed 个")
+                toast(
+                    if (todo.isEmpty()) "订阅账号关注的 ${theirs.size} 个作者，浏览账号都已经关注了"
+                    else "导入了 $ok 个关注" + (if (failed > 0) "，$failed 个失败" else "") + "（订阅账号共关注 ${theirs.size} 个）",
+                )
+                if (ok > 0) {
+                    timeline = null
+                    timelineView()
+                    loadFollows()
+                }
+            } catch (e: Exception) {
+                toast("导入关注失败：" + errText(e))
+            }
+            importing = null
+        }
     }
 
     private fun afterLogin() {
@@ -584,10 +664,10 @@ class Workshop(val steam: Steam, val store: Store, private val scope: CoroutineS
         busy[key] = true
         scope.launch {
             try {
-                if (!steam.subscribe(it.id, on)) throw Exception("Steam 没有确认")
+                if (!subscriber.subscribe(it.id, on)) throw Exception("Steam 没有确认")
                 if (on) {
                     store.subscribed[it.id] = System.currentTimeMillis()
-                    toast("已订阅「${it.title}」，电脑上的 Steam 会自动下载")
+                    toast("已订阅「${it.title}」" + (if (sub.loggedIn) "到订阅账号" else "") + "，电脑上的 Steam 会自动下载")
                 } else {
                     store.subscribed.remove(it.id)
                     toast("已取消订阅")
