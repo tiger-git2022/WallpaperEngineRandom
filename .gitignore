@@ -16,7 +16,7 @@ wer_portrait.json*
 fps30/
 export_job_items*.json
 
-# 安卓相关一律不进本仓库
+# 安卓：改版 WE 的文件不进本仓库；android/ 里的工坊 App 只提交源码
 *.apk
 *.apks
 *.idsig
@@ -48,3 +48,10 @@ prefs_backup/
 # Python
 __pycache__/
 *.pyc
+
+# 安卓工坊 App（android/）的本机文件
+.gradle/
+local.properties
+.idea/
+*.iml
+.kotlin/
