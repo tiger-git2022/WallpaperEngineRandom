@@ -42,8 +42,10 @@ a:hover { text-decoration: underline; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--fg3); border-radius: 4px; border: 2px solid transparent; background-clip: padding-box; opacity: .6; }
 
-#app { display: grid; grid-template-rows: auto 1fr; height: 100vh; }
-#top { display: flex; align-items: center; gap: 8px; padding: 12px 18px 10px; }
+/* the single column is minmax(0, 1fr): nothing inside may make the page wider than the window (an "auto" column grew
+   to the top bar's natural width and the right side of the page was cut off in a narrow window) */
+#app { display: grid; grid-template-rows: auto 1fr; grid-template-columns: minmax(0, 1fr); height: 100vh; }
+#top { display: flex; align-items: center; gap: 8px; row-gap: 8px; flex-wrap: wrap; padding: 12px 18px 10px; min-width: 0; }
 .tabs { display: flex; gap: 4px; }
 .tab { border: 0; background: transparent; padding: 6px 12px; border-radius: 4px; color: var(--fg2); position: relative; }
 .tab:hover { background: var(--hover); }
@@ -54,9 +56,14 @@ a:hover { text-decoration: underline; }
 .tab, #top button, .bar button, .bar label { white-space: nowrap; flex-shrink: 0; }
 #search { flex: 1 1 auto; width: 0; min-width: 110px; max-width: 420px; margin-left: 8px; }
 #sort { min-width: 130px; }
-#me { display: flex; align-items: center; gap: 8px; margin-left: auto; color: var(--fg2); white-space: nowrap; }
-#me img { width: 26px; height: 26px; border-radius: 50%; }
-#me .acct { display: flex; align-items: center; gap: 8px; padding: 3px 8px; color: var(--fg2); }
+/* the account takes the rest of the row and shrinks first (names end in "…"); only when even the avatar does not fit
+   does it move to a second row */
+#me { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; color: var(--fg2); white-space: nowrap; flex: 1 1 0; min-width: 90px; }
+#me img { width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0; }
+#me .acct { display: flex; align-items: center; gap: 8px; padding: 3px 8px; color: var(--fg2); min-width: 0; max-width: 100%; flex-shrink: 1; }
+#me .acct > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+#me .acct > span:last-child { flex-shrink: 0; overflow: visible; }
+#me .acct > .subtag { flex-shrink: 20; }   /* "订阅：…" gives way before the name */
 #me .subtag { color: var(--fg3); font-size: 12px; }
 /* account menu: the browse account (timeline, browsing, following) and the subscribe account (only subscribes) */
 #accounts { position: fixed; top: 50px; right: 14px; width: 340px; max-width: calc(100vw - 28px); background: var(--solid); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px var(--shadow); padding: 12px 14px; z-index: 8; display: none; }
