@@ -308,8 +308,21 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .dt .links a:hover { color: var(--accent); }
 /* 查重的小窗：只剩查重本身（窗口那边也去掉了左边的导航） */
 body.compact #top, body.compact #filters, body.compact #detail, body.compact #split, body.compact .dt .links { display: none !important; }
-body.compact #body, body.compact #body.nofilters, body.compact #body.nodetail { grid-template-columns: 0 minmax(0, 1fr) 0 !important; }
+/* the hidden columns take no grid cell, so the list is the only item: one column (with "0 1fr 0" it landed in the 0-wide one) */
+body.compact #body, body.compact #body.nofilters, body.compact #body.nodetail { grid-template-columns: minmax(0, 1fr) !important; }
 body.compact .dt { cursor: default; }
+/* narrow small window: no device row, tighter edges, one tile per row from 240px up */
+body.compact #mainhead .devs { display: none; }
+body.compact #mainhead { padding: 0 10px 8px; }
+body.compact #main { padding: 4px 10px 20px; }
+body.compact .dg { padding: 10px; }
+body.compact .dgrid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 180px), 1fr)); }
+body.compact .dnav .dhint { display: none; }
+.dbar label, .dnav span { white-space: nowrap; }
+body.compact .dbar label:has(#dmin) { flex: 1 1 auto; min-width: 0; }
+body.compact #dmin { width: auto; flex: 1 1 auto; min-width: 50px; }
+body.compact .dnav { gap: 6px; }
+body.compact .dnav button { padding: 4px 8px; }
 .dnav { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
 .dnav span { color: var(--fg2); font-variant-numeric: tabular-nums; }
 .dnav .dhint { color: var(--fg3); font-size: 12px; margin-left: auto; }
@@ -1106,7 +1119,7 @@ function followButton(id) {
   };
   return b;
 }
-async function loadFollows() { if (!me.loggedIn) return; try { S.follows = await host.call('following'); save(); ensureProfiles(S.follows); if (!current) renderFollowing(); } catch (e) { } }
+async function loadFollows() { if (!me.loggedIn) return; try { S.follows = await host.call('following'); save(); ensureProfiles(S.follows); if (!current && S.tab === 'following') renderFollowing(); } catch (e) { } }
 let profileQueue = new Set(), profileTimer = 0;
 function ensureProfiles(ids) {
   const week = Date.now() - 7 * 86400e3;
