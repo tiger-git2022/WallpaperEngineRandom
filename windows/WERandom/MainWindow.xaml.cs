@@ -459,11 +459,16 @@ public partial class MainWindow : FluentWindow
 			return;
 		}
 		HomeCurrent.Text = entries.Count > 1 ? (entries.Count + " 台显示器，包括在 Wallpaper Engine 里手动换的") : "包括在 Wallpaper Engine 里手动换的";
-		foreach (NowEntry e in entries)
+		// one column per monitor, together filling the row; pictures stay 16:9 at whatever width that gives
+		NowPanel.Columns = entries.Count;
+		NowPanel.Margin = new Thickness(-8, 0, -8, 0);
+		for (int i = 0; i < entries.Count; i++)
 		{
+			NowEntry e = entries[i];
 			CurrentWallpaper.Item it = e.Item;
-			var card = new StackPanel { Width = 300, Margin = new Thickness(0, 0, 16, 8) };
-			FrameworkElement thumb = Thumb(e.Image, 300, 169, 6, e.Gif);
+			var card = new StackPanel { Margin = new Thickness(8, 0, 8, 8) };   // same on every card (the grid has -8 on both sides), so all are equally wide
+			FrameworkElement thumb = Thumb(e.Image, double.NaN, 169, 6, e.Gif);
+			card.SizeChanged += (s, a) => thumb.Height = Math.Round(a.NewSize.Width * 9 / 16);
 			thumb.Cursor = System.Windows.Input.Cursors.Hand;
 			thumb.ToolTip = "打开壁纸文件夹";
 			string folder = it.Folder;

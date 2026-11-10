@@ -5,8 +5,9 @@ Wallpaper Engine 的托盘小工具：按每张壁纸的**添加时间**分档�
 
 ## 下载
 
-到 [Releases](../../releases) 下载最新的 `WallpaperEngineRandom-vX.Y.Z-win-x64.zip`，解压到一个固定文件夹
-（例如 `C:\Tools\WERandom\`），双击 `WERandom.exe` 即可。
+到 [Releases](../../releases) 下载最新的 `WERandom-vX.Y.Z-win-x64.exe`，放到一个固定文件夹
+（例如 `C:\Tools\WERandom\`，设置、历史和日志会存在 exe 旁边），双击运行即可。只有这一个文件，依赖都嵌在里面，
+第一次运行时解到 `%LOCALAPPDATA%\WERandom\lib`。
 
 - 系统要求：Windows 10 / 11，自带的 .NET Framework 4.8，不需要另外安装运行库。
 - 需要已经安装 Wallpaper Engine（Steam 版）。
@@ -83,7 +84,7 @@ dotnet build windows\WERandom.csproj -c Release
 
 ## 发布流程
 
-在 [CHANGELOG.md](CHANGELOG.md) 顶部加一节 `## [X.Y.Z] - 日期`，合并（或推送）到 `main`。GitHub Actions 发现这个版本号还没有 `vX.Y.Z` 标签，就会自动编译，把打包好的 zip 发布到 Releases 并打上标签。最上面一节写成 `- 未发布` 时只编译、不发布。
+在 [CHANGELOG.md](CHANGELOG.md) 顶部加一节 `## [X.Y.Z] - 日期`，合并（或推送）到 `main`。GitHub Actions 发现这个版本号还没有 `vX.Y.Z` 标签，就会自动编译，把单文件的 exe 发布到 Releases 并打上标签。最上面一节写成 `- 未发布` 时只编译、不发布。
 
 也可以自己推送形如 `vX.Y.Z` 的 tag 来发布。
 

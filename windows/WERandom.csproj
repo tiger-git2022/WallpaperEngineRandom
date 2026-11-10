@@ -21,6 +21,11 @@
     <EmbeddedResource Include="app.ico" LogicalName="WERandom.app.ico" />
     <EmbeddedResource Include="WERandom\Web\workshop.html" LogicalName="WERandom.workshop.html" />
   </ItemGroup>
+  <!-- 单文件发布：先正常编译到一个目录，再用 -p:EmbedFrom=<那个目录> 编译一次，把那里的 dll 全部嵌进 exe（运行时见 Bundle.cs）。
+       平时编译不带 EmbedFrom，dll 照常放在 exe 旁边。 -->
+  <ItemGroup Condition="'$(EmbedFrom)' != ''">
+    <EmbeddedResource Include="$(EmbedFrom)\*.dll" LogicalName="lib/%(Filename)%(Extension)" />
+  </ItemGroup>
   <ItemGroup>
     <Reference Include="System.Core" />
     <Reference Include="System.IO.Compression" />
