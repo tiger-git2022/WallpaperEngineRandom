@@ -44,14 +44,21 @@ a:hover { text-decoration: underline; }
 
 /* the single column is minmax(0, 1fr): nothing inside may make the page wider than the window (an "auto" column grew
    to the top bar's natural width and the right side of the page was cut off in a narrow window) */
-#app { display: grid; grid-template-rows: auto 1fr; grid-template-columns: minmax(0, 1fr); height: 100vh; }
+/* the frame around the lists never scrolls (clip, unlike hidden, cannot be scrolled from script either) */
+html, body, #app, #body, #center { overflow: clip; }
+#app { display: grid; grid-template-rows: auto auto 1fr; grid-template-columns: minmax(0, 1fr); height: 100vh; }
 #top { display: flex; align-items: center; gap: 8px; row-gap: 8px; flex-wrap: wrap; padding: 12px 18px 10px; min-width: 0; }
 .tabs { display: flex; gap: 4px; }
 .tab { border: 0; background: transparent; padding: 6px 12px; border-radius: 4px; color: var(--fg2); position: relative; }
 .tab:hover { background: var(--hover); }
 .tab.on { background: var(--hover); color: var(--fg); font-weight: 600; }
 .tab.on::after { content: ""; position: absolute; left: 50%; bottom: 1px; width: 16px; height: 3px; margin-left: -8px; border-radius: 2px; background: var(--accent); }
-.tab .count { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 6px; border-radius: 9px; background: var(--new); color: #fff; font-size: 11px; line-height: 18px; text-align: center; font-weight: 600; }
+.tab .count { min-width: 18px; padding: 0 5px; margin-left: 6px; border-radius: 9px; background: var(--new); color: #fff; font-size: 11px; font-weight: 600; }
+/* number / Latin pills: a line box is ascent + descent tall, but digits and capitals sit between the baseline and the
+   cap height, so centring the line box leaves them off-centre (by an amount that depends on the font). text-box trims
+   the box to cap height .. baseline and equal padding (1cap = this font's cap height) makes the pill 18px, so the glyphs
+   themselves are centred in any font and size. text-box only works on block containers, hence inline-block. */
+.tab .count, .badge.new { display: inline-block; text-align: center; line-height: 1; text-box: trim-both cap alphabetic; padding-block: calc((18px - 1cap) / 2); }
 .tab .count[hidden] { display: none; }
 .tab, #top button, .bar button, .bar label { white-space: nowrap; flex-shrink: 0; }
 #search { flex: 1 1 auto; width: 0; min-width: 110px; max-width: 420px; margin-left: 8px; }
@@ -75,8 +82,8 @@ a:hover { text-decoration: underline; }
 .acc .row img { width: 28px; height: 28px; border-radius: 50%; background: var(--chip); }
 .acc .row .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-#body { display: grid; grid-template-columns: 200px minmax(0, 1fr) 380px; min-height: 0; }
-#body.nofilters { grid-template-columns: 0 minmax(0, 1fr) 380px; }
+#body { --dwx: var(--dw, 380px); display: grid; grid-template-columns: 200px minmax(0, 1fr) var(--dwx); min-height: 0; }
+#body.nofilters { grid-template-columns: 0 minmax(0, 1fr) var(--dwx); }
 #filters { overflow: auto; padding: 4px 14px 20px 18px; }
 #body.nofilters #filters { display: none; }
 #filters h4 { margin: 14px 0 6px; font-size: 12px; color: var(--fg3); font-weight: 600; }
@@ -86,6 +93,15 @@ a:hover { text-decoration: underline; }
 #filters .reset { margin-top: 14px; width: 100%; }
 #main { overflow: auto; padding: 4px 16px 30px; position: relative; }
 #detail { overflow: auto; margin: 0 12px 12px 0; border: 1px solid var(--line); border-radius: 8px; background: var(--card2); }
+/* drag the left edge of the detail panel to change its width */
+#split { position: absolute; top: 0; bottom: 12px; right: calc(var(--dwx) - 4px); width: 8px; cursor: col-resize; z-index: 4; }
+#split::after { content: ""; position: absolute; left: 3px; top: 40%; height: 48px; width: 2px; border-radius: 1px; background: var(--fg3); opacity: 0; transition: opacity .15s; }
+#split:hover::after, #split.drag::after { opacity: .8; }
+#body.nodetail #split { display: none; }
+body.resizing, body.resizing * { cursor: col-resize !important; user-select: none; }
+.dvnav { display: flex; align-items: center; gap: 4px; margin-bottom: 8px; color: var(--fg3); font-size: 12px; }
+.dvnav .grow { flex: 1; }
+.dvnav button { padding: 2px 10px; }
 
 .bar { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; color: var(--fg2); flex-wrap: wrap; }
 .bar .grow { flex: 1; }
@@ -95,7 +111,9 @@ a:hover { text-decoration: underline; }
 .seg button + button { border-left: 1px solid var(--ctlline); }
 .seg button.on { background: var(--accent); color: #000; font-weight: 600; }
 :root.light .seg button.on { color: #fff; }
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 14px 12px; }
+/* tiles always fill the row; --cols (see sizeTiles) picks how many so that a tile is never wider than it is with the
+   detail panel closed: opening or widening the panel adds a column and shrinks the tiles a little, it never leaves a gap */
+.grid { display: grid; grid-template-columns: var(--cols, repeat(auto-fill, minmax(168px, 1fr))); gap: 14px 12px; }
 .tile { cursor: pointer; border-radius: 7px; padding: 5px; margin: -5px; }
 .tile:hover { background: var(--hover); }
 .tile.sel { background: var(--hover); outline: 2px solid var(--accent); }
@@ -103,9 +121,11 @@ a:hover { text-decoration: underline; }
 .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .badges { position: absolute; left: 6px; top: 6px; display: flex; gap: 4px; }
 .badge { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 4px; background: rgba(0,0,0,.72); color: #fff; }
-.badge.new { background: var(--new); }
+.badge.new { background: var(--new); padding: 0 6px; }
 .badge.sub { position: absolute; right: 6px; bottom: 6px; background: rgba(16,124,16,.9); }
 .badge.dl { position: absolute; right: 6px; bottom: 6px; background: rgba(0,0,0,.72); color: var(--warn); }
+/* same box as the hover button (.qu): 12px, padding 2px 9px, 1px border */
+.badge.sub, .badge.dl { font-size: 12px; font-weight: 600; padding: 2px 9px; border: 1px solid transparent; }
 .badge.type { position: absolute; right: 6px; top: 6px; font-weight: 600; }
 .tile .t { margin-top: 6px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tile .s { color: var(--fg3); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -118,7 +138,7 @@ a:hover { text-decoration: underline; }
 /* the only picture of a post: whole picture in its own proportions, centred (no square crop) */
 .pics.n1 { grid-template-columns: 1fr; }
 .pics .tile[data-mode=big] .thumb { aspect-ratio: auto; display: flex; align-items: center; justify-content: center; min-height: 180px; border-radius: 6px; }
-.pics .tile[data-mode=big] .thumb img { width: 100%; height: auto; max-height: min(440px, 60vh); object-fit: contain; cursor: zoom-in; }
+.pics .tile[data-mode=big] .thumb img { width: 100%; height: auto; max-height: min(440px, 60vh); object-fit: contain; }
 .pics .tile[data-mode=big]:hover { background: transparent; }
 .post .strip { margin-top: 8px; }
 .post .chips { margin: 10px 0 4px; }
@@ -127,6 +147,8 @@ a:hover { text-decoration: underline; }
 .post .txt a[data-more] { font-size: 12px; }
 .post .inline { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
 .post .inline:empty { display: none; }
+.post .cm:empty { display: none; }
+.post .cm { margin-top: 8px; }
 .pf button.primary { padding: 4px 14px; }
 .pf a[data-unsub] { color: var(--fg3); font-size: 12px; }
 #lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.86); display: none; align-items: center; justify-content: center; z-index: 20; cursor: zoom-out; }
@@ -144,7 +166,7 @@ a:hover { text-decoration: underline; }
 .post .txt p { margin: 4px 0 0; color: var(--fg2); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; }
 .pics { display: grid; gap: 6px; grid-template-columns: minmax(0, 380px); }
 .pics.multi { grid-template-columns: repeat(3, 1fr); }
-.pics.multi.n2 { grid-template-columns: repeat(2, minmax(0, 220px)); }
+.pics.multi.n2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .pics .tile .t { font-size: 12px; font-weight: 500; margin: 4px 2px 0; }
 .pics .tile { margin: 0; padding: 0; border-radius: 6px; }
 .pics .tile.sel { outline-offset: 2px; }
@@ -156,8 +178,12 @@ a:hover { text-decoration: underline; }
 .pf .done { color: var(--ok); }
 .pf .wait { color: var(--warn); }
 .feed .divider { margin: 4px 0 14px; }
-.qs { position: absolute; right: 6px; bottom: 6px; padding: 2px 9px; font-size: 12px; display: none; background: var(--accent); border-color: var(--accent); color: #000; font-weight: 600; }
+.qs { position: absolute; right: 6px; bottom: 6px; padding: 2px 9px; font-size: 12px; display: none; font-weight: 600; }
 .tile:hover .qs { display: block; }
+/* subscribed / downloading: on hover the badge turns into "取消订阅" */
+.qu { position: absolute; right: 6px; bottom: 6px; padding: 2px 9px; font-size: 12px; display: none; font-weight: 600; background: var(--solid); }
+.tile:hover .qu { display: block; }
+.tile:hover .qu ~ .badge.sub, .tile:hover .qu ~ .badge.dl { display: none; }
 .divider { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; color: var(--fg3); font-size: 12px; margin: 6px 0; }
 .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .divider b { color: var(--fg2); font-weight: 600; }
@@ -167,10 +193,20 @@ a:hover { text-decoration: underline; }
 .empty button { margin-top: 14px; }
 .warnbox { border: 1px solid var(--warn); color: var(--warn); border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; }
 
-.authorhead { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
-.authorhead img { width: 64px; height: 64px; border-radius: 6px; background: var(--card); }
-.authorhead h2 { margin: 0; font-size: 20px; }
-.authorhead .s { color: var(--fg3); }
+/* creator page: the head, the subscription filter and "已加载 N / M" sit above the scrolling list (outside it, so they
+   need no background of their own and always stay visible) */
+#center { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+#mainhead { padding: 0 18px 10px; border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+#mainhead:empty { display: none; }
+#mainhead .bar, #mainhead .dbar, #mainhead .devs { margin-bottom: 0; }
+#mainhead .devs { margin-top: 8px; }
+#center #main { flex: 1 1 auto; min-height: 0; }
+.authorhead { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
+.authorhead img { width: 36px; height: 36px; border-radius: 5px; background: var(--card); }
+.authorhead h2 { margin: 0; font-size: 16px; line-height: 1.2; white-space: nowrap; }
+.authorhead .s { color: var(--fg3); font-size: 12px; white-space: nowrap; }
+.authorhead .bar { margin: 0; }
+.authorhead .grow { flex: 1; }
 .people { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
 .person { display: flex; align-items: center; gap: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px; cursor: pointer; }
 .person:hover { background: var(--hover); }
@@ -264,7 +300,8 @@ a:hover { text-decoration: underline; }
 /* narrow window (the main window's default size): filters float over the list when "筛选" is clicked */
 #body { position: relative; }
 @media (max-width: 1150px) {
-  #body, #body.nofilters { grid-template-columns: minmax(0, 1fr) 320px; }
+  #body { --dwx: var(--dw, 320px); }
+  #body, #body.nofilters { grid-template-columns: minmax(0, 1fr) var(--dwx); }
   #filters, #body.nofilters #filters { display: none; position: absolute; left: 0; top: 0; bottom: 0; width: 210px; z-index: 5; background: var(--solid); border-radius: 0 8px 8px 0; box-shadow: 6px 0 24px var(--shadow); }
   #body.overlay #filters { display: block; }
   #body.nodetail, #body.nodetail.nofilters { grid-template-columns: minmax(0, 1fr) 0; }
@@ -285,9 +322,11 @@ a:hover { text-decoration: underline; }
     <button id="filterBtn" class="ghost" title="显示 / 隐藏筛选">筛选</button>
     <div id="me"></div>
   </div>
+  <div id="mainhead"></div>
   <div id="body">
     <div id="filters"></div>
-    <div id="main"></div>
+    <div id="center"><div id="main"></div></div>
+    <div id="split" title="拖动调整详情的宽度"></div>
     <div id="detail"><div class="none">点一张壁纸查看详情</div></div>
   </div>
 </div>
@@ -396,7 +435,7 @@ async function loadSubs(force) {
   const owner = me.loggedIn ? subscriber().steamid : '';
   if (!owner || subsLoading) return;
   const old = S.subs;
-  if (!force && old && old.owner === owner && Date.now() - old.time < 30 * 60e3) return;
+  if (!force && old && old.owner === owner && Date.now() - old.time < 15 * 60e3) return;
   const announce = force || !old || old.owner !== owner;
   subsLoading = '正在读取订阅列表…'; subsError = null; paintSubs();
   try {
@@ -437,6 +476,27 @@ async function loadSubs(force) {
   }
 }
 function paintSubs() { if ($('#accounts').classList.contains('on')) renderAccounts(); }
+// Steam lists subscriptions newest first: reading page 1 every minute (and when the window comes back) shows what was
+// subscribed elsewhere (Steam client, website, phone) within about a minute. Unsubscribing elsewhere shows up with the
+// full read (every 15 minutes) or when the wallpaper's details are opened.
+let headBusy = false;
+async function loadSubsHead() {
+  const owner = me.loggedIn ? subscriber().steamid : '';
+  if (!owner || subsLoading || headBusy || document.hidden || !S.subs || S.subs.owner !== owner) return;
+  headBusy = true;
+  try {
+    const r = await host.call('subs', { page: 1 });
+    if (r.owner !== owner || !S.subs || S.subs.owner !== owner) return;
+    const added = r.ids.filter(id => !S.subs.ids[id]);
+    if (!added.length) return;
+    for (const id of added) { S.subs.ids[id] = 1; unsubscribed.delete(id); refreshTile(id); }
+    if (r.total) S.subs.total = +r.total;
+    save();
+    host.call('subsLog', { message: `订阅列表第 1 页有 ${added.length} 个新订阅：${added.join(', ')}` }).catch(() => {});
+    if (current && current.kind === 'author' && (S.authorSub || 'all') !== 'all') renderList(true); else paintAuthorBar();
+    if (selected && added.includes(selected)) { const it = items.get(selected), box = $('.dv .actions'); if (it && box) renderActions(box, it); }
+  } catch (e) { } finally { headBusy = false; }
+}
 // opening a wallpaper's details: check its page once (the list can be out of date, or miss what the account can't see)
 async function checkSubscribed(id) {
   const owner = me.loggedIn ? subscriber().steamid : '';
@@ -650,6 +710,7 @@ function back() {
 }
 
 function needLogin(main) {
+  $('#mainhead').innerHTML = '';
   main.innerHTML = `<div class="empty"><h3>登录 Steam 后使用创意工坊</h3>时间线、搜索、订阅和关注都要用你的 Steam 账号。<br>一般登录 <b>Steam 客户端里用的那个账号</b>，订阅的壁纸才会下载到这台电脑。<br>如果那个号看不到部分内容，可以在这里登录另一个号浏览，再在右上角的账号菜单里把客户端的号登录为「订阅账号」。<br><button class="primary">登录 Steam</button></div>`;
   main.querySelector('button').onclick = login;
 }
@@ -787,8 +848,9 @@ function tileHtml(it, v, mode) {
     <div class="thumb"><img loading="lazy" src="${esc(small(it.preview, mode === 'big' ? 760 : 320))}" data-small="${esc(small(it.preview, mode === 'big' ? 760 : 320))}" alt="">
       <div class="badges">${isNew ? '<span class="badge new">NEW</span>' : ''}</div>
       ${type ? `<span class="badge type">${LABEL[type]}</span>` : ''}
+      ${st && me.loggedIn && it.app === 431960 ? `<button class="qu" title="取消订阅（${st === 'pending' ? '还没下载完' : '已订阅'}）">取消订阅</button>` : ''}
       ${st === 'installed' || st === 'subscribed' ? '<span class="badge sub">✓ 已订阅</span>' : st === 'pending' ? '<span class="badge dl">下载中</span>' : ''}
-      ${canSub ? '<button class="qs" title="直接订阅，Steam 会自动下载">+ 订阅</button>' : ''}
+      ${canSub ? '<button class="qs primary" title="直接订阅，Steam 会自动下载">+ 订阅</button>' : ''}
     </div>
     ${mode === 'big' ? '' : `<div class="t" title="${esc(it.title)}">${esc(it.title)}</div>`}
     ${mode === 'grid' ? `<div class="s">${who}${v.kind === 'browse' && S.sort === 'subs' ? num(it.subs) + ' 订阅' : ago(it.created)}</div>` : ''}
@@ -815,10 +877,10 @@ function groupHtml(post, v) {
     <div class="txt">发布了 <b>${n}</b> 个新壁纸</div>
     <div class="pics multi ${n === 2 || n === 4 ? 'n2' : ''}">${post.items.map(it => tileHtml(it, v, 'pic')).join('')}</div>
     <div class="inline"></div>
-    <div class="pf"><span style="color:var(--fg3)">点一张图查看详情和订阅</span><a data-works="${post.creator}">作者的全部作品</a></div>
+    <div class="pf"><span style="color:var(--fg3)">点一张图在右边看详情和订阅</span><a data-works="${post.creator}">作者的全部作品</a></div>
   </div>`;
 }
-// timeline: one post per wallpaper, like a Weibo feed; everything about the wallpaper is in the post (no side panel)
+// timeline: one post per wallpaper, like a Weibo feed; clicking the picture shows it in the detail panel
 function postHtml(it, v) {
   const p = S.profiles[it.creator] || {};
   const read = it.created <= S.readUpTo;
@@ -842,7 +904,8 @@ function bodyHtml(it, v) {
     ${imgs.length || videos.length ? `<div class="strip" data-for="${it.id}"><img class="on" src="${esc(small(it.preview, 160))}" data-full="${esc(it.preview)}" title="封面">${imgs.map(u => `<img src="${esc(small(u, 160))}" data-full="${esc(u)}">`).join('')}${videos.map(y => `<img src="https://i.ytimg.com/vi/${esc(y)}/mqdefault.jpg" data-yt="${esc(y)}" title="在 YouTube 打开视频">`).join('')}</div>` : ''}
     ${tags.length ? `<div class="chips">${tags.map(t => `<span class="chip" data-tag="${esc(t)}">${esc(LABEL[t] || t)}</span>`).join('')}</div>` : ''}
     <div class="meta">${nums}</div>
-    <div class="pf" data-actions="${it.id}">${postActions(it)}</div>`;
+    <div class="pf" data-actions="${it.id}">${postActions(it)}</div>
+    ${v && v.kind === 'timeline' ? `<div class="cm" data-cm="${it.id}" data-auto></div>` : ''}`;
 }
 function postActions(it) {
   const st = subState(it.id);
@@ -851,7 +914,7 @@ function postActions(it) {
     : st === 'subscribed' ? `<span class="done" title="订阅账号在 Steam 上已订阅，这台电脑上还没下载">✓ 已订阅 · 本机还没下载</span><a data-unsub="${it.id}">取消订阅</a>`
     : st === 'pending' ? `<span class="wait">已订阅 · 等待 Steam 下载</span><a data-unsub="${it.id}">取消订阅</a>`
     : `<button class="primary" data-sub="${it.id}">+ 订阅</button>`;
-  return `${sub}<a data-works="${it.creator}">作者的全部作品</a><a data-cmt="${it.id}">评论</a><a data-steam="${it.id}">在 Steam 中打开</a><a data-web="${it.id}">网页</a>`;
+  return `${sub}<a data-works="${it.creator}">作者的全部作品</a><a data-steam="${it.id}">在 Steam 中打开</a><a data-web="${it.id}">网页</a>`;
 }
 // in a merged post, clicking a picture opens that wallpaper's details inside the post (again: closes them)
 function toggleInline(tile) {
@@ -877,7 +940,8 @@ async function expandText(id) {
 function lightbox(url) { const lb = $('#lightbox'); lb.querySelector('img').src = url; lb.classList.add('on'); }
 function renderList(keepScroll) {
   const main = $('#main'), v = current; if (!v) return;
-  $('#body').classList.toggle('nodetail', v.kind === 'timeline');
+  sizeTiles();
+  syncDetail();
   const top = main.scrollTop;
   if (!me.loggedIn && v.kind !== 'author') { needLogin(main); return; }
   main.innerHTML = '';
@@ -886,7 +950,8 @@ function renderList(keepScroll) {
     main.appendChild(h(`<div class="warnbox">${sb === me
       ? `订阅会加到浏览账号「${esc(me.name)}」上，但 Steam 客户端登录的是「${client}」，客户端不会下载。请在右上角的<a data-acc>账号菜单</a>里把客户端的号登录为订阅账号。`
       : `订阅账号是「${esc(sb.name || sb.steamid)}」，但 Steam 客户端登录的是「${client}」，客户端不会下载。请在右上角的<a data-acc>账号菜单</a>里把订阅账号换成客户端的号。`}</div>`));
-  if (v.kind === 'author') renderAuthorHead(main, v);
+  const head = $('#mainhead'); head.innerHTML = '';
+  const row = v.kind === 'author' ? renderAuthorHead(head, v) : null;
   const bar = h('<div class="bar"></div>');
   if (v.kind === 'timeline') {
     const b = boundaryIndex(v);
@@ -902,7 +967,8 @@ function renderList(keepScroll) {
     bar.innerHTML = `<span>${v.search ? `搜索「${esc(v.search)}」` : '全部壁纸'}${v.total != null ? '，共 ' + num(v.total) + ' 个' : ''}</span>`;
     if (v.search) { const c = h('<a>清除搜索</a>'); c.onclick = () => { $('#search').value = ''; views.browse = null; openTab('browse'); }; bar.appendChild(c); }
   }
-  main.appendChild(bar);
+  // the bar of every list sits in the row above the list and the detail panel, so opening the panel doesn't move it
+  if (row) row.querySelector('.slot').replaceWith(bar); else head.appendChild(bar);
   const feed = v.kind === 'timeline';
   const grid = h(`<div class="${feed ? 'feed' : 'grid'}" id="grid"></div>`);
   const shown = v.ids.map(id => items.get(id)).filter(it => v.kind !== 'author' || (passesFilters(it) && passesSub(it)));
@@ -915,6 +981,8 @@ function renderList(keepScroll) {
     placeDivider(v);
     for (const el of grid.querySelectorAll('.tile:not(.seen)')) seenObserver.observe(el);
     for (const el of grid.querySelectorAll('.tile')) animObserver.observe(el);
+    // watch the post, not the box: an empty box is display:none and would never count as visible
+    for (const el of grid.querySelectorAll('.cm[data-auto]')) commentObserver.observe(el.closest('.post'));
   }
   const more = h('<div class="more" id="more"></div>'); grid.appendChild(more); updateMore(v);
   if (!v.loading && !v.error && !shown.length && v.done) {
@@ -935,6 +1003,8 @@ function bindTiles(grid) {
   grid.onclick = e => {
     const qs = e.target.closest('.qs');
     if (qs) { e.stopPropagation(); const it = items.get(qs.closest('.tile').dataset.id); qs.disabled = true; doSubscribe(it, true); return; }
+    const qu = e.target.closest('.qu');
+    if (qu) { e.stopPropagation(); const it = items.get(qu.closest('.tile').dataset.id); qu.disabled = true; qu.innerHTML = '<span class="spin"></span>'; doSubscribe(it, false); return; }
     const works = e.target.closest('[data-works]'); if (works) { openAuthor(works.dataset.works); return; }
     const sub = e.target.closest('[data-sub]'); if (sub) { sub.outerHTML = '<span class="spin"></span>'; doSubscribe(items.get(sub.dataset.sub), true); return; }
     const unsub = e.target.closest('[data-unsub]'); if (unsub) { unsub.outerHTML = '<span class="spin"></span>'; doSubscribe(items.get(unsub.dataset.unsub), false); return; }
@@ -952,9 +1022,10 @@ function bindTiles(grid) {
       return;
     }
     const t = e.target.closest('.tile'); if (!t) return;
-    if (t.dataset.mode === 'big') lightbox(t.dataset.cur || items.get(t.dataset.id).preview);
-    else if (t.dataset.mode === 'pic') toggleInline(t);
-    else select(t.dataset.id);
+    if (selected === t.dataset.id) closeDetail(); else select(t.dataset.id);
+  };
+  grid.ondblclick = e => {
+    const t = e.target.closest('.tile[data-mode=big]'); if (t) lightbox(t.dataset.cur || items.get(t.dataset.id).preview);
   };
   grid.onmouseover = e => {   // hover plays the animated preview, like Wallpaper Engine
     const t = e.target.closest('.tile'); if (!t || t._hover || t._anim) return; t._hover = true;
@@ -979,17 +1050,18 @@ function authorBarHtml(v) {
   return `<div class="seg" title="按订阅账号的订阅状态筛选">${seg}</div><span>${loaded}</span>`;
 }
 function paintAuthorBar() {
-  const v = current, bar = v && v.kind === 'author' ? $('#main .bar') : null;
+  const v = current, bar = v && v.kind === 'author' ? $('#mainhead .bar') : null;
   if (bar) bar.innerHTML = authorBarHtml(v);
 }
 function renderAuthorHead(main, v) {
   const p = S.profiles[v.author] || {};
-  const head = h(`<div class="authorhead"><button class="ghost" title="返回">←</button><img src="${esc(p.a || '')}" alt=""><div style="flex:1;min-width:0"><h2>${esc(p.n || v.author)}</h2><div class="s">${v.total != null ? v.total + ' 个 Wallpaper Engine 作品' : '正在读取作品…'}</div></div></div>`);
+  const head = h(`<div class="authorhead"><button class="ghost" title="返回">←</button><img src="${esc(p.a || '')}" alt=""><div><h2>${esc(p.n || v.author)}</h2><div class="s">${v.total != null ? v.total + ' 个 Wallpaper Engine 作品' : '正在读取作品…'}</div></div><span class="slot"></span><span class="grow"></span></div>`);
   head.querySelector('button').onclick = back;
   if (me.loggedIn && v.author !== me.steamid) head.appendChild(followButton(v.author));
   const open = h('<button class="ghost">在 Steam 中打开</button>'); open.onclick = () => host.call('open', { url: `https://steamcommunity.com/profiles/${v.author}/myworkshopfiles/?appid=431960` }); head.appendChild(open);
   main.appendChild(head);
   ensureProfiles([v.author]);
+  return head;
 }
 
 // ---------- authors ----------
@@ -1030,12 +1102,14 @@ function ensureProfiles(ids) {
   }, 120);
 }
 function renderFollowing() {
-  const main = $('#main');
-  $('#body').classList.add('nodetail');
+  const main = $('#main'); $('#mainhead').innerHTML = '';
+  syncDetail();
   if (!me.loggedIn) { needLogin(main); return; }
   const list = S.follows;
-  main.innerHTML = `<div class="bar"><span>你在 Steam 上关注的 ${list.length} 位玩家 / 作者。点一个查看 TA 上传的全部壁纸。</span><span class="grow"></span></div>`;
-  const re = h('<button class="ghost">刷新</button>'); re.onclick = loadFollows; main.firstChild.appendChild(re);
+  const head = $('#mainhead');
+  head.innerHTML = `<div class="bar"><span>你在 Steam 上关注的 ${list.length} 位玩家 / 作者。点一个查看 TA 上传的全部壁纸。</span><span class="grow"></span></div>`;
+  main.innerHTML = '';
+  const re = h('<button class="ghost">刷新</button>'); re.onclick = loadFollows; head.firstChild.appendChild(re);
   if (!list.length) { main.appendChild(h('<div class="empty"><h3>还没有关注任何作者</h3>在壁纸详情里点作者旁边的「关注」，作者的新作品就会出现在时间线里。</div>')); return; }
   const grid = h('<div class="people"></div>');
   for (const id of list) {
@@ -1049,11 +1123,80 @@ function renderFollowing() {
 }
 
 // ---------- detail panel ----------
+// the detail panel is there while a wallpaper is selected; clicking the selected one again (or ×) closes it
+// Opening / closing the panel (or dragging its edge) changes the list's width and the tiles flow into a different
+// number of columns; keepPlace keeps the wallpaper you clicked at the same height on screen while that happens.
+function keepPlace(id, change) {
+  const main = $('#main');
+  const el = id && main.querySelector(`.tile[data-id="${id}"], .dt[data-id="${id}"]`);
+  const before = el ? el.getBoundingClientRect().top : 0;
+  change();
+  if (el) main.scrollTop += el.getBoundingClientRect().top - before;
+}
+// FLIP: remember where the visible tiles are, make the change, then animate each from where it was to where it is now
+function glide(change) {
+  const main = $('#main'), m = main.getBoundingClientRect();
+  const els = [...main.querySelectorAll('.grid > .tile, .dgrid > .dt, .feed > .post')].filter(e => { const r = e.getBoundingClientRect(); return r.bottom > m.top - 300 && r.top < m.bottom + 300; });
+  const before = new Map(els.map(e => [e, e.getBoundingClientRect()]));
+  change();
+  for (const [e, a] of before) {
+    const b = e.getBoundingClientRect(); if (!b.width) continue;
+    const dx = a.left - b.left, dy = a.top - b.top, sc = e.classList.contains('post') ? 1 : a.width / b.width;
+    if (Math.abs(dx) < 1 && Math.abs(dy) < 1 && Math.abs(sc - 1) < 0.01) continue;
+    e.animate([{ transformOrigin: '0 0', transform: `translate(${dx}px, ${dy}px) scale(${sc})` }, { transformOrigin: '0 0', transform: 'none' }], { duration: 280, easing: 'cubic-bezier(.2, .8, .2, 1)' });
+  }
+}
+function syncDetail(anchor) {
+  const body = $('#body'), opening = !!selected && body.classList.contains('nodetail');
+  glide(() => keepPlace(anchor || selected, () => { body.classList.toggle('nodetail', !selected); sizeTiles(); }));
+  if (opening) $('#detail').animate([{ opacity: 0, transform: 'translateX(24px)' }, { opacity: 1, transform: 'none' }], { duration: 240, easing: 'cubic-bezier(.2, .8, .2, 1)' });
+}
+function closeDetail() {
+  const was = selected;
+  selected = null;
+  for (const t of document.querySelectorAll('.tile.sel, .dt.sel')) t.classList.remove('sel');
+  const d = $('#detail');
+  if ($('#body').classList.contains('nodetail') || !d.animate) { syncDetail(was); return; }
+  // fade the panel out first, then let the tiles spread out
+  d.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateX(24px)' }], { duration: 160, easing: 'ease-in' }).onfinish = () => { if (!selected) syncDetail(was); };
+}
+// columns: the widest tile allowed is the one that fills the list with the detail panel closed (tiles at least 168px,
+// gaps 12px); now use as few columns as keep the tiles at or below that width
+function sizeTiles() {
+  const body = $('#body'), cols = getComputedStyle(body).gridTemplateColumns.split(' ').map(parseFloat);
+  const full = cols.reduce((a, b) => a + b, 0) - (cols.length === 3 ? cols[0] : 0) - 32;
+  const now = $('#main').clientWidth - 32;
+  if (!(full > 0 && now > 0)) return;   // page not shown yet; called again on resize / when shown
+  const nFull = Math.max(1, Math.floor((full + 12) / (168 + 12)));
+  const widest = (full - 12 * (nFull - 1)) / nFull;
+  const n = Math.max(1, Math.ceil((now + 12) / (widest + 12) - 0.01));
+  body.style.setProperty('--cols', `repeat(${n}, minmax(0, 1fr))`);
+}
+
+// the wallpapers of the list on screen, in the order they are shown (for ‹ › and the arrow keys)
+function listIds() {
+  const ids = [];
+  for (const el of document.querySelectorAll('#main .tile[data-id], #main .dt[data-id]')) if (!ids.includes(el.dataset.id)) ids.push(el.dataset.id);
+  return ids;
+}
+function step(dir) {
+  const ids = listIds(), i = ids.indexOf(selected);
+  const next = ids[i < 0 ? 0 : i + dir];
+  if (!next) { toast(dir > 0 ? '已经是最后一个了' + (current && !current.done ? '，往下翻会继续加载' : '') : '已经是第一个了'); return; }
+  select(next);
+  // scroll only the list (scrollIntoView also scrolled the page's fixed frame and shifted the whole page)
+  const el = document.querySelector(`#main .tile[data-id="${next}"], #main .dt[data-id="${next}"]`), main = $('#main');
+  if (el) {
+    const r = el.getBoundingClientRect(), m = main.getBoundingClientRect();
+    const d = r.top < m.top ? r.top - m.top - 8 : r.bottom > m.bottom ? r.bottom - m.bottom + 8 : 0;
+    if (d) main.scrollBy({ top: d, behavior: 'smooth' });
+  }
+}
 async function select(id, fromOutside) {
   selected = id;
-  $('#body').classList.remove('nodetail');   // e.g. "创意工坊页面" on the overview opens a wallpaper while the timeline is shown
-  for (const t of document.querySelectorAll('.tile.sel')) t.classList.remove('sel');
-  const tile = document.querySelector(`.tile[data-id="${id}"]`); if (tile) tile.classList.add('sel');
+  syncDetail();   // e.g. "创意工坊页面" on the overview opens a wallpaper while the timeline is shown
+  for (const t of document.querySelectorAll('.tile.sel, .dt.sel')) t.classList.remove('sel');
+  for (const t of document.querySelectorAll(`.tile[data-id="${id}"], .dt[data-id="${id}"]`)) t.classList.add('sel');
   if (views.timeline && views.timeline.ids.includes(id)) markSeen(id);
   checkSubscribed(id);
   let it = items.get(id);
@@ -1074,7 +1217,9 @@ function renderDetail(it) {
   const v = it.votes; const total = v ? (+v.votes_up || 0) + (+v.votes_down || 0) : 0;
   const rating = v && total ? Math.round(v.votes_up / total * 100) + '% 好评（' + total + ' 票）' : v ? '暂无评价' : '';
   const shownTags = it.tags.filter(t => t !== 'Wallpaper');
+  const pos = listIds().indexOf(it.id), count = listIds().length;
   const el = h(`<div class="dv">
+    <div class="dvnav"><button class="ghost" data-step="-1" title="上一个（←）"${pos <= 0 ? ' disabled' : ''}>‹</button><button class="ghost" data-step="1" title="下一个（→）"${pos < 0 || pos >= count - 1 ? ' disabled' : ''}>›</button><span>${pos >= 0 ? (pos + 1) + ' / ' + count : ''}</span><span class="grow"></span><button class="ghost" data-close title="关闭详情（再点一次选中的壁纸也一样）">×</button></div>
     <img class="big" alt="">
     ${imgs.length > 1 || videos.length ? `<div class="strip">${imgs.map((u, i) => `<img src="${esc(small(u))}" data-full="${esc(u)}" class="${i ? '' : 'on'}">`).join('')}${videos.map(y => `<img src="https://i.ytimg.com/vi/${esc(y)}/mqdefault.jpg" data-yt="${esc(y)}" title="在 YouTube 打开视频">`).join('')}</div>` : ''}
     <h2>${esc(it.title)}</h2>
@@ -1103,6 +1248,8 @@ function renderDetail(it) {
   el.querySelector('.who .n').style.cursor = 'pointer';
   if (me.loggedIn && it.creator !== me.steamid) el.querySelector('.who').appendChild(followButton(it.creator));
   for (const c of el.querySelectorAll('.chip')) c.onclick = () => searchTag(c.dataset.tag);
+  for (const b of el.querySelectorAll('[data-step]')) b.onclick = () => step(+b.dataset.step);
+  el.querySelector('[data-close]').onclick = closeDetail;
   renderActions(el.querySelector('.actions'), it);
   const d = $('#detail'); d.innerHTML = ''; d.appendChild(el); d.scrollTop = 0;
   loadComments(it.id);
@@ -1192,8 +1339,18 @@ function parseComments(html) {
     };
   }).filter(m => m.text || m.name);
 }
-function commentsHtml(id) {
+// timeline posts load the first few comments when they come into view
+const commentObserver = new IntersectionObserver(es => {
+  for (const e of es) {
+    if (!e.isIntersecting) continue;
+    commentObserver.unobserve(e.target);
+    const box = e.target.querySelector('.cm[data-auto]'); if (box) loadComments(box.dataset.cm, false, 3);
+  }
+}, { root: document.getElementById('main'), rootMargin: '0px 0px 400px 0px' });
+// auto: the box under a timeline post: nothing while loading or when there are no comments
+function commentsHtml(id, auto) {
   const c = comments.get(id); if (!c) return '';
+  if (auto && !c.list.length) return c.error ? `<div class="foot">评论读取失败：${esc(c.error)} <a data-cmore="${id}">重试</a></div>` : '';
   const rows = c.list.map(m => {
     const who = m.steamid ? ` data-cauthor="${m.steamid}"` : '';
     return `<div class="cmt"><img src="${esc(m.avatar)}" alt=""${who}><div style="flex:1;min-width:0"><div><span class="n"${who}>${esc(m.name)}</span><span class="w" title="${m.time ? date(m.time) : ''}">${ago(m.time)}</span></div><div class="x">${esc(m.text)}</div></div></div>`;
@@ -1204,16 +1361,16 @@ function commentsHtml(id) {
     : !c.done ? `<div class="foot"><a data-cmore="${id}">更多评论</a></div>` : '';
   return `<h4>评论${c.total ? '（' + c.total + '）' : ''}</h4>${rows}${foot}`;
 }
-function paintComments(id) { for (const box of document.querySelectorAll(`.cm[data-cm="${id}"]`)) box.innerHTML = commentsHtml(id); }
+function paintComments(id) { for (const box of document.querySelectorAll(`.cm[data-cm="${id}"]`)) box.innerHTML = commentsHtml(id, box.hasAttribute('data-auto')); }
 // first call: the first page; more = true ("更多评论" / "重试"): the next page
-async function loadComments(id, more) {
+async function loadComments(id, more, first) {
   const it = items.get(id); if (!it) return;
   let c = comments.get(id); if (!c) comments.set(id, c = { list: [], total: 0, done: false, loading: false, error: null, tried: false });
   if (c.loading || c.done || (c.tried && !more)) { paintComments(id); return; }
   c.tried = true;
   c.loading = true; c.error = null; paintComments(id);
   try {
-    const r = await host.call('comments', { owner: it.creator, id, start: c.list.length, count: 20 });
+    const r = await host.call('comments', { owner: it.creator, id, start: c.list.length, count: !more && first ? first : 20 });
     if (!r || !r.success) throw new Error(/private/i.test((r && r.error) || '') ? '作者的主页不公开，看不到评论' : (r && r.error) || '读取评论失败');
     const list = parseComments(r.comments_html || '');
     c.total = +r.total_count || 0; c.list.push(...list);
@@ -1310,8 +1467,8 @@ function paintDupeStatus() {
 }
 function renderDupes(keepScroll) {
   if (S.tab !== 'dupes' || current) return;
-  const main = $('#main'), top = main.scrollTop, c = dcfg();
-  $('#body').classList.add('nodetail');
+  const main = $('#main'), top = main.scrollTop, c = dcfg(); $('#mainhead').innerHTML = '';
+  syncDetail();
   dupe.groups = buildGroups();
   const devs = dupe.devices;
   const devHtml = !devs ? '<span>还没读取平板 / 手机</span>'
@@ -1322,13 +1479,13 @@ function renderDupes(keepScroll) {
       <div>${ids.map(id => `<span class="it" title="${id}">${esc((items.get(id) || {}).title || (dupe.data && (dupe.data.items.find(x => x.id === id) || {}).title) || id)}<a data-dunsend="${esc(model)}|${id}" title="从列表里去掉">×</a></span>`).join('')}</div>
       <div class="dnote" style="margin:4px 0 0">在电脑上的 Wallpaper Engine 里选中这些壁纸，用「发送到手机」发过去。设备上有了以后，下次读取设备时会自动从列表里去掉。</div></div>`).join('');
   const total = dupe.data ? dupe.data.items.length : 0;
-  main.innerHTML = `<div class="dbar"><button class="primary" data-dscan${dupe.loading ? ' disabled' : ''}>${dupe.data ? '重新查找' : '开始查找'}</button>
+  $('#mainhead').innerHTML = `<div class="dbar"><button class="primary" data-dscan${dupe.loading ? ' disabled' : ''}>${dupe.data ? '重新查找' : '开始查找'}</button>
       <label title="越往右越严格：只有几乎一样的才算一组；往左会把同一个人物的不同动作也算进来，但也更容易把画风相近的不同人物算进来">相似度 <input type="range" id="dmin" min="0.65" max="0.99" step="0.01" value="${c.min}"> <span class="num" id="dminv">${Math.round(c.min * 100)}%</span></label>
       <label><input type="checkbox" id="donly"${c.onlyDevice ? ' checked' : ''}> 只看平板 / 手机上有的</label>
       <span id="dstatus"></span><span class="grow" style="flex:1"></span>
       ${dupe.data ? `<span>${total} 个壁纸，${dupe.groups.length} 组相似</span>` : ''}</div>
-    <div class="devs">${devHtml}<button class="ghost" data-ddev>读取设备</button><input id="daddr" placeholder="无线 adb 地址，如 192.168.1.20:5555" value="${esc(c.addrs.join(', '))}" title="每次读取设备前先连接这些地址（多个用逗号分开）"></div>
-    ${sendHtml}<div id="dlist"></div>`;
+    <div class="devs">${devHtml}<button class="ghost" data-ddev>读取设备</button><input id="daddr" placeholder="无线 adb 地址，如 192.168.1.20:5555" value="${esc(c.addrs.join(', '))}" title="每次读取设备前先连接这些地址（多个用逗号分开）"></div>`;
+  main.innerHTML = `${sendHtml}<div id="dlist"></div>`;
   paintDupeStatus();
   const list = $('#dlist');
   if (!dupe.data) {
@@ -1455,8 +1612,26 @@ function applyTheme(theme, accent) {
   S.filters = Object.assign({ type: [], age: [], res: [], genre: [] }, S.filters || {});
   for (const b of document.querySelectorAll('.tab')) b.onclick = () => tabClick(b.dataset.tab);
   $('#totop').onclick = goTop;
+  if (S.detailW) $('#body').style.setProperty('--dw', S.detailW + 'px');
+  const split = $('#split');
+  split.onpointerdown = e => {
+    e.preventDefault(); split.setPointerCapture(e.pointerId); split.classList.add('drag'); document.body.classList.add('resizing');
+    const body = $('#body'), box = body.getBoundingClientRect();
+    split.onpointermove = m => {
+      const w = Math.round(Math.max(260, Math.min(box.right - m.clientX, box.width - 300)));
+      keepPlace(selected, () => { body.style.setProperty('--dw', w + 'px'); sizeTiles(); }); S.detailW = w; updateTop();
+    };
+    split.onpointerup = () => { split.onpointermove = split.onpointerup = null; split.classList.remove('drag'); document.body.classList.remove('resizing'); save(); };
+  };
+  split.ondblclick = () => { delete S.detailW; $('#body').style.removeProperty('--dw'); save(); };
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { sizeTiles(); loadSubsHead(); refreshInstalled(); } });
+  window.addEventListener('focus', () => loadSubsHead());
+  document.addEventListener('keydown', e => {
+    if (!selected || e.altKey || e.ctrlKey || e.metaKey || (e.target instanceof Element && e.target.closest('input, select, textarea')) || $('#lightbox').classList.contains('on')) return;
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); step(e.key === 'ArrowRight' ? 1 : -1); }
+  });
   $('#main').addEventListener('scroll', () => { updateTop(); clearTimeout(posTimer); posTimer = setTimeout(savePosition, 500); }, { passive: true });
-  window.addEventListener('resize', updateTop);
+  window.addEventListener('resize', () => { updateTop(); sizeTiles(); });
   document.addEventListener('click', e => {
     const subf = e.target.closest('[data-subf]'); if (subf) { S.authorSub = subf.dataset.subf; save(); renderList(); return; }
     const more = e.target.closest('[data-cmore]'); if (more) { loadComments(more.dataset.cmore, true); return; }
@@ -1472,7 +1647,7 @@ function applyTheme(theme, accent) {
   $('#filterBtn').onclick = e => {
     e.stopPropagation();
     if (narrow()) body.classList.toggle('overlay');
-    else { S.showFilters = !S.showFilters; save(); syncFilters(); }
+    else { S.showFilters = !S.showFilters; save(); syncFilters(); sizeTiles(); }
   };
   // a click outside the floating filter panel closes it
   document.addEventListener('click', e => { if (body.classList.contains('overlay') && !e.target.closest('#filters')) body.classList.remove('overlay'); });
@@ -1480,14 +1655,14 @@ function applyTheme(theme, accent) {
     if (e.target.closest('[data-acc]')) { e.stopPropagation(); toggleAccounts(true); return; }
     if (!e.target.closest('#accounts, #me')) toggleAccounts(false);
   });
-  syncFilters();
+  syncFilters(); sizeTiles();
   renderFilters(); renderSort();
   await refreshInstalled(); setInterval(refreshInstalled, 30000);
   host.send('ready');
   try { me = await host.call('status'); } catch (e) { me = { loggedIn: false }; }
   renderMe();
   if (me.loggedIn) loadFollows();
-  loadSubs(); setInterval(() => loadSubs(), 5 * 60e3);
+  loadSubs(); setInterval(() => loadSubs(), 5 * 60e3); setInterval(loadSubsHead, 60e3);
   openTab(S.tab || 'timeline');
   // the timeline is the main view; load it in the background so the unread count shows even on other tabs
   if (me.loggedIn && S.tab !== 'timeline') { views.timeline = newView('timeline'); loadMore(views.timeline); }

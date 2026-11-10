@@ -15,6 +15,14 @@ public static class Program
 	[STAThread]
 	public static void Main(string[] args)
 	{
+		// 单文件版：先把嵌在 exe 里的 dll 准备好，再碰任何用到它们的类型（所以其余部分在另一个方法里）
+		Bundle.Init();
+		Run(args);
+	}
+
+	[System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+	private static void Run(string[] args)
+	{
 		try
 		{
 			if (Environment.OSVersion.Version.Major >= 6)

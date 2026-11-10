@@ -20,13 +20,15 @@ public sealed class UpdateInfo
 	public string Version;
 	public string Notes;
 	public string PageUrl;
+	/// <summary>安装包：单文件的 exe（1.4.0 起），或者以前的 zip。</summary>
 	public string ZipUrl;
 	public string Sha256;
 }
 
 /// <summary>
-/// 检查 GitHub Releases 上的新版本，下载 zip、校验 SHA-256，退出后用一个隐藏的 PowerShell 脚本把新文件复制进程序文件夹再重新打开。
-/// 程序文件夹里不在 zip 里的文件（设置、队列、历史、日志等）不会动。
+/// 检查 GitHub Releases 上的新版本，下载安装包、校验 SHA-256，退出后用一个隐藏的 PowerShell 脚本把新文件复制进程序文件夹再重新打开。
+/// 1.4.0 起安装包是单个 exe（依赖都嵌在里面，见 Bundle.cs），直接替换正在用的 exe；更早的版本是 zip。
+/// 程序文件夹里的其他文件（设置、队列、历史、日志等）不会动。
 /// </summary>
 public static class Updater
 {
@@ -34,7 +36,9 @@ public static class Updater
 	public const string ReleasesUrl = "https://github.com/" + Repo + "/releases/latest";
 	const string AppName = "WERandom";
 
-	static bool IsAsset(string name) => name.StartsWith("WallpaperEngineRandom-", StringComparison.OrdinalIgnoreCase) && name.EndsWith("-win-x64.zip", StringComparison.OrdinalIgnoreCase);
+	static bool IsExe(string name) => name.StartsWith("WERandom-", StringComparison.OrdinalIgnoreCase) && name.EndsWith("-win-x64.exe", StringComparison.OrdinalIgnoreCase);
+
+	static bool IsZip(string name) => name.StartsWith("WallpaperEngineRandom-", StringComparison.OrdinalIgnoreCase) && name.EndsWith("-win-x64.zip", StringComparison.OrdinalIgnoreCase);
 
 	static readonly HttpClient Http = CreateClient();
 
@@ -91,21 +95,20 @@ public static class Updater
 		var info = new UpdateInfo { Version = tag.TrimStart('v', 'V'), Notes = Str(r, "body") ?? "", PageUrl = Str(r, "html_url") ?? ReleasesUrl };
 		if (r.TryGetValue("assets", out object assets) && assets is ArrayList list)
 		{
-			foreach (Dictionary<string, object> a in list.OfType<Dictionary<string, object>>())
+			// 有单文件 exe 就用它，没有再找 zip
+			List<Dictionary<string, object>> all = list.OfType<Dictionary<string, object>>().ToList();
+			Dictionary<string, object> a = all.FirstOrDefault(x => IsExe(Str(x, "name") ?? "")) ?? all.FirstOrDefault(x => IsZip(Str(x, "name") ?? ""));
+			if (a != null)
 			{
-				if (IsAsset(Str(a, "name") ?? ""))
-				{
-					info.ZipUrl = Str(a, "browser_download_url");
-					string digest = Str(a, "digest") ?? "";
-					info.Sha256 = digest.StartsWith("sha256:", StringComparison.Ordinal) ? digest.Substring(7).ToLowerInvariant() : null;
-					break;
-				}
+				info.ZipUrl = Str(a, "browser_download_url");
+				string digest = Str(a, "digest") ?? "";
+				info.Sha256 = digest.StartsWith("sha256:", StringComparison.Ordinal) ? digest.Substring(7).ToLowerInvariant() : null;
 			}
 		}
 		return info;
 	}
 
-	/// <summary>下载并校验 zip，返回本地路径。</summary>
+	/// <summary>下载并校验安装包（exe 或 zip），返回本地路径。</summary>
 	public static async Task<string> DownloadAsync(UpdateInfo info, IProgress<int> progress)
 	{
 		if (info.ZipUrl == null)
@@ -122,7 +125,8 @@ public static class Updater
 			throw new InvalidDataException("缺少 SHA-256 校验值");
 		}
 		string work = WorkDir(info.Version);
-		string zip = Path.Combine(work, "update.zip");
+		bool isExe = uri.AbsolutePath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
+		string zip = Path.Combine(work, isExe ? "update.exe" : "update.zip");
 		using (HttpResponseMessage response = await Http.GetAsync(info.ZipUrl, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false))
 		{
 			response.EnsureSuccessStatusCode();
@@ -172,7 +176,7 @@ public static class Updater
 		}
 	}
 
-	/// <summary>解压并启动更新脚本。调用后程序要马上退出，脚本等进程结束后复制文件并重新打开程序。</summary>
+	/// <summary>准备好新文件并启动更新脚本。调用后程序要马上退出，脚本等进程结束后复制文件并重新打开程序。</summary>
 	public static void StartInstall(string zip)
 	{
 		string work = Path.GetDirectoryName(zip);
@@ -181,14 +185,23 @@ public static class Updater
 		{
 			Directory.Delete(extracted, true);
 		}
-		ZipFile.ExtractToDirectory(zip, extracted);
-		// zip 里只有一个顶层文件夹时取它里面的内容（WE 的 zip 是平铺的）
-		string source = extracted;
-		if (Directory.GetFiles(source).Length == 0 && Directory.GetDirectories(source).Length == 1)
-		{
-			source = Directory.GetDirectories(source)[0];
-		}
 		string exe = Process.GetCurrentProcess().MainModule.FileName;
+		string source = extracted;
+		if (zip.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+		{
+			// 单文件版：新 exe 用现在这个 exe 的文件名，替换它
+			Directory.CreateDirectory(extracted);
+			File.Copy(zip, Path.Combine(extracted, Path.GetFileName(exe)));
+		}
+		else
+		{
+			ZipFile.ExtractToDirectory(zip, extracted);
+			// zip 里只有一个顶层文件夹时取它里面的内容（WE 的 zip 是平铺的）
+			if (Directory.GetFiles(source).Length == 0 && Directory.GetDirectories(source).Length == 1)
+			{
+				source = Directory.GetDirectories(source)[0];
+			}
+		}
 		if (!File.Exists(Path.Combine(source, Path.GetFileName(exe))))
 		{
 			throw new InvalidDataException("安装包里没有 " + Path.GetFileName(exe));
