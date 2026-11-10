@@ -1646,7 +1646,7 @@ document.addEventListener('click', async e => {
   const ap = t.closest('[data-dapply]');
   if (ap) {
     const id = ap.dataset.dapply; ap.disabled = true; ap.innerHTML = '<span class="spin"></span>';
-    try { await host.call('dupeApply', { id }); dupe.applied = id; const it = dupe.data.items.find(x => x.id === id); toast('已应用到桌面：' + (it ? dupeTitle(it) : id) + '。到了换壁纸的时间会照常换走'); }
+    try { await host.call('dupeApply', { id }); dupe.applied = id; }   // no message: it would cover what you're comparing; the button turns into "✓ 桌面上"
     catch (err) { toast('应用失败：' + errText(err), 6000); }
     renderDupes(true); return;
   }
