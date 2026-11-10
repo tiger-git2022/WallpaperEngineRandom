@@ -119,6 +119,12 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .tile.sel { background: var(--hover); outline: 2px solid var(--accent); }
 .thumb { position: relative; aspect-ratio: 1 / 1; border-radius: 4px; overflow: hidden; background: var(--thumb); }
 .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* until a picture has loaded: a light sweeping across its box; then the picture fades in and the sweep stops
+   (the "ok" class is set by a page-wide load listener, see start) */
+@keyframes sweep { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+.thumb:not(.ok), .dv .big:not(.ok) { background-image: linear-gradient(100deg, transparent 35%, var(--hover) 50%, transparent 65%); background-size: 250% 100%; animation: sweep 1.3s linear infinite; }
+.thumb img, .dv .big { transition: opacity .25s; }
+.thumb:not(.ok) img { opacity: 0; }   /* the big detail picture is the img itself: its background shows the sweep */
 .badges { position: absolute; left: 6px; top: 6px; display: flex; gap: 4px; }
 .badge { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 4px; background: rgba(0,0,0,.72); color: #fff; }
 .badge.new { background: var(--new); padding: 0 6px; }
@@ -215,7 +221,10 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .person .s { color: var(--fg3); font-size: 12px; }
 
 #detail .none { color: var(--fg3); text-align: center; padding: 80px 24px; }
-.dv { padding: 14px; }
+.dv { padding: 14px; animation: dvin .22s cubic-bezier(.2, .8, .2, 1); }
+@keyframes dvin { from { opacity: 0; transform: translateY(8px); } }
+#detail .none.loading { display: flex; flex-direction: column; align-items: center; gap: 12px; animation: dvin .22s ease; }
+#detail .none.loading .spin { width: 28px; height: 28px; border-width: 3px; }
 .dv .big { width: 100%; height: 340px; object-fit: contain; background: var(--thumb); border-radius: 6px; display: block; }
 .strip { display: flex; gap: 6px; margin-top: 8px; overflow-x: auto; padding-bottom: 4px; }
 .strip img { height: 52px; aspect-ratio: 1 / 1; object-fit: cover; border-radius: 4px; cursor: pointer; opacity: .75; border: 2px solid transparent; }
@@ -640,6 +649,8 @@ function newView(kind, extra) { return Object.assign({ kind, ids: [], cursor: '*
 
 function openTab(tab) {
   if (current) current.scroll = $('#main').scrollTop;
+  // another tab: the wallpaper in the detail panel belongs to the old list, so close the panel
+  if (selected && tab !== S.tab) { selected = null; $('#body').classList.add('nodetail'); }
   S.tab = tab; save(); stack = [];
   if (tab === 'following') { current = null; renderTabs(); renderFollowing(); return; }
   if (tab === 'dupes') { current = null; renderTabs(); renderDupes(); updateTop(); return; }
@@ -1200,17 +1211,23 @@ async function select(id, fromOutside) {
   if (views.timeline && views.timeline.ids.includes(id)) markSeen(id);
   checkSubscribed(id);
   let it = items.get(id);
-  if (!it || it.description == null) {
-    if (!it) $('#detail').innerHTML = '<div class="none"><span class="spin"></span></div>';
-    try { const r = await host.call('details', { ids: [id] }); const f = ((r.response || {}).publishedfiledetails || [])[0]; if (f && +f.result === 1) { it = remember(f); if (!it.description) it.description = f.description || ''; } }
-    catch (e) { if (!it) { $('#detail').innerHTML = `<div class="none">读取失败：${esc(errText(e))}</div>`; return; } }
+  // show what we already know right away (picture, title, author, buttons); only the full description is still loading
+  if (it) { renderDetail(it, it.description == null); ensureProfiles([it.creator]); }
+  else $('#detail').innerHTML = '<div class="none loading"><span class="spin"></span><div>正在读取壁纸信息…</div></div>';
+  if (it && it.description != null) return;
+  try { const r = await host.call('details', { ids: [id] }); const f = ((r.response || {}).publishedfiledetails || [])[0]; if (f && +f.result === 1) { it = remember(f); if (!it.description) it.description = f.description || ''; } }
+  catch (e) {
+    if (selected !== id) return;
+    if (!it) { $('#detail').innerHTML = `<div class="none">读取失败：${esc(errText(e))}</div>`; return; }
+    const d = $('.dv .desc'); if (d) d.innerHTML = `<span style="color:var(--danger)">简介读取失败：${esc(errText(e))}</span>`; return;
   }
-  if (!it) { $('#detail').innerHTML = '<div class="none">这个壁纸不存在或已被删除</div>'; return; }
   if (selected !== id) return;
-  renderDetail(it);
-  ensureProfiles([it.creator]);
+  if (!it) { $('#detail').innerHTML = '<div class="none">这个壁纸不存在或已被删除</div>'; return; }
+  const d = $(`.dv[data-id="${id}"] .desc`);
+  if (d) { d.textContent = bbcode(it.description) || ''; if (!d.textContent) d.innerHTML = '<span style="color:var(--fg3)">没有简介</span>'; }
+  else { renderDetail(it); ensureProfiles([it.creator]); }
 }
-function renderDetail(it) {
+function renderDetail(it, loading) {
   const p = S.profiles[it.creator] || {};
   const imgs = [it.preview, ...it.previews.filter(x => +x.preview_type === 0 && x.url).map(x => x.url)];
   const videos = it.previews.filter(x => +x.preview_type === 1 && x.youtubevideoid).map(x => x.youtubevideoid);
@@ -1218,7 +1235,7 @@ function renderDetail(it) {
   const rating = v && total ? Math.round(v.votes_up / total * 100) + '% 好评（' + total + ' 票）' : v ? '暂无评价' : '';
   const shownTags = it.tags.filter(t => t !== 'Wallpaper');
   const pos = listIds().indexOf(it.id), count = listIds().length;
-  const el = h(`<div class="dv">
+  const el = h(`<div class="dv" data-id="${it.id}">
     <div class="dvnav"><button class="ghost" data-step="-1" title="上一个（←）"${pos <= 0 ? ' disabled' : ''}>‹</button><button class="ghost" data-step="1" title="下一个（→）"${pos < 0 || pos >= count - 1 ? ' disabled' : ''}>›</button><span>${pos >= 0 ? (pos + 1) + ' / ' + count : ''}</span><span class="grow"></span><button class="ghost" data-close title="关闭详情（再点一次选中的壁纸也一样）">×</button></div>
     <img class="big" alt="">
     ${imgs.length > 1 || videos.length ? `<div class="strip">${imgs.map((u, i) => `<img src="${esc(small(u))}" data-full="${esc(u)}" class="${i ? '' : 'on'}">`).join('')}${videos.map(y => `<img src="https://i.ytimg.com/vi/${esc(y)}/mqdefault.jpg" data-yt="${esc(y)}" title="在 YouTube 打开视频">`).join('')}</div>` : ''}
@@ -1234,7 +1251,7 @@ function renderDetail(it) {
       <span>ID</span><span style="user-select:text">${it.id}</span>
     </div>
     <div class="chips">${shownTags.map(t => `<span class="chip" data-tag="${esc(t)}">${esc(LABEL[t] || t)}</span>`).join('')}</div>
-    <div class="desc">${esc(bbcode(it.description != null ? it.description : it.short)) || '<span style="color:var(--fg3)">没有简介</span>'}</div>
+    <div class="desc">${loading ? `${it.short ? esc(bbcode(it.short)) + '<br>' : ''}<span class="spin"></span> <span style="color:var(--fg3)">正在读取完整简介…</span>` : esc(bbcode(it.description != null ? it.description : it.short)) || '<span style="color:var(--fg3)">没有简介</span>'}</div>
     <div class="cm" data-cm="${it.id}"></div>
   </div>`);
   const big = el.querySelector('.big');
@@ -1612,6 +1629,10 @@ function applyTheme(theme, accent) {
   S.filters = Object.assign({ type: [], age: [], res: [], genre: [] }, S.filters || {});
   for (const b of document.querySelectorAll('.tab')) b.onclick = () => tabClick(b.dataset.tab);
   $('#totop').onclick = goTop;
+  // pictures: mark the box loaded (stops the sweep, fades the picture in); a broken picture stops the sweep too
+  const loaded = e => { const t = e.target; if (t.tagName !== 'IMG') return; const box = t.classList.contains('big') ? t : t.closest('.thumb'); if (box) box.classList.add('ok'); };
+  document.addEventListener('load', loaded, true);
+  document.addEventListener('error', loaded, true);
   if (S.detailW) $('#body').style.setProperty('--dw', S.detailW + 'px');
   const split = $('#split');
   split.onpointerdown = e => {
