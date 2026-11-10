@@ -6,6 +6,11 @@ SteamWallpaper：在手机上浏览 Steam 上关注的作者的 Wallpaper Engine
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 最上面一节标了日期、合并到 main 后自动发布；标「未发布」时只编译。
 
+## [0.3.4] - 2026-11-10
+
+### 改进
+- 缩略图和大图还没加载出来时，灰底上有一道高光一直从左往右扫，看得出在加载；加载完淡入图片。
+
 ## [0.3.3] - 2026-11-10
 
 ### 新增
