@@ -364,6 +364,37 @@ fun TileBadges(it: Item, timeline: Boolean) {
             if (timeline && ws.isNew(it)) Badge("NEW", background = Tones.New)
         }
         if (!timeline && it.type.isNotEmpty()) Badge(label(it.type), modifier = Modifier.align(Alignment.TopEnd))
-        if (ws.isSubscribed(it.id)) Badge("✓ 已订阅", background = Tones.Ok.copy(alpha = 0.92f), modifier = Modifier.align(Alignment.BottomEnd))
+        SubToggle(it, Modifier.align(Alignment.BottomEnd))
+    }
+}
+
+/**
+ * 图片右下角的小订阅按钮：点一下订阅 / 取消订阅，不用打开详情。
+ * 和原来的「已订阅」角标一样大，不多挡图；没登录或不是 Wallpaper Engine 的作品时只显示角标。
+ */
+@Composable
+private fun SubToggle(it: Item, modifier: Modifier) {
+    val sub = ws.isSubscribed(it.id)
+    if (!ws.me.loggedIn || !it.isWallpaperEngine) {
+        if (sub) Badge("✓ 已订阅", background = Tones.Ok.copy(alpha = 0.92f), modifier = modifier)
+        return
+    }
+    val busy = ws.busy["sub:${it.id}"] == true
+    val shape = RoundedCornerShape(50)
+    Row(
+        modifier.height(28.dp).clip(shape)
+            .background(if (sub) Tones.Ok.copy(alpha = 0.92f) else androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.55f))
+            .border(1.dp, androidx.compose.ui.graphics.Color.White.copy(alpha = 0.35f), shape)
+            .clickable(enabled = !busy) { ws.subscribe(it, !sub) }
+            .padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (busy) {
+            androidx.compose.material3.CircularProgressIndicator(
+                Modifier.size(14.dp), strokeWidth = 2.dp, color = androidx.compose.ui.graphics.Color.White,
+            )
+        } else {
+            Text(if (sub) "✓ 已订阅" else "+ 订阅", color = androidx.compose.ui.graphics.Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        }
     }
 }
