@@ -48,8 +48,7 @@ class Steam {
 
     class Profile(val steamId: String, val name: String, val avatar: String)
 
-    /** [json]：用接口读到时是 GetUserFiles 的原始 JSON（里面已经有壁纸的详细信息），抓网页时为 null。 */
-    class CreatorPage(val ids: List<String>, val total: Int, val following: Boolean, val hasFollowButton: Boolean, val json: String? = null)
+    class CreatorPage(val ids: List<String>, val total: Int, val following: Boolean, val hasFollowButton: Boolean)
 
     val http: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
@@ -254,46 +253,12 @@ class Steam {
         }
 
     /** 作者上传的 WE 壁纸，按发布时间从新到旧，每页 30 个（page 从 1 开始）。 */
+    /** 作者的创意工坊网页，每页 30 个（按作者查作品的接口 GetUserFiles 只认开发者 key，用登录令牌调返回 401）。 */
     suspend fun creatorFiles(steamId: String, page: Int): CreatorPage {
         checkSteamId(steamId)
-        // 网页按账号的成人内容设置隐藏「成人」作品（不登录时也是），作品数会少；登录后用接口读，读不到再抓网页。
-        // 关注状态只有网页上有，第一页照样抓一次
-        val api = if (loggedIn) runCatching { userFiles(steamId, page) }.onFailure { Log.i("GetUserFiles 失败：${it.message}") }.getOrNull() else null
-        val web = if (api == null || page == 1) runCatching { scrapeCreator(steamId, page) }.getOrElse { if (api == null) throw it else null } else null
-        Log.i("作者 $steamId 第 $page 页：接口 ${api?.total ?: "失败"} 个，网页 ${web?.total ?: "没读"} 个")
-        if (api == null) return web!!
-        if (web != null && web.total > api.total) return web
-        return CreatorPage(api.ids, api.total, web?.following ?: false, web?.hasFollowButton ?: false, api.json)
-    }
-
-    /** IPublishedFileService/GetUserFiles：作者上传的 WE 壁纸（含成人内容），按发布时间从新到旧，每页 30 个。 */
-    private suspend fun userFiles(steamId: String, page: Int): CreatorPage {
-        val t = token(false)
-        val url = "$API/IPublishedFileService/GetUserFiles/v1/".toHttpUrl().newBuilder()
-            .addQueryParameter("access_token", t)
-            .addQueryParameter("steamid", steamId)
-            .addQueryParameter("appid", APP_ID)
-            .addQueryParameter("page", maxOf(1, page).toString())
-            .addQueryParameter("numperpage", "30")
-            .addQueryParameter("type", "myfiles")
-            .addQueryParameter("sortmethod", "creationorder")
-            .addQueryParameter("return_tags", "true")
-            .addQueryParameter("return_previews", "true")
-            .addQueryParameter("return_vote_data", "true")
-            .addQueryParameter("return_short_description", "true")
-            .build()
-        val text = withContext(Dispatchers.IO) {
-            http.newCall(Request.Builder().url(url).build()).execute().use { resp ->
-                val body = resp.body.string()
-                if (!resp.isSuccessful) throw SteamException(resp.code, "Steam 接口返回 ${resp.code}")
-                body
-            }
-        }
-        val r = JSONObject(text).optJSONObject("response") ?: throw SteamException(0, "Steam 接口没有返回内容：${text.take(200)}")
-        if (!r.has("total")) throw SteamException(0, "Steam 接口没有返回作品数：${text.take(200)}")
-        val arr = r.optJSONArray("publishedfiledetails")
-        val ids = (0 until (arr?.length() ?: 0)).mapNotNull { arr!!.optJSONObject(it)?.optString("publishedfileid")?.takeIf { s -> s.isNotEmpty() } }
-        return CreatorPage(ids, r.optInt("total"), false, false, text)
+        val r = scrapeCreator(steamId, page)
+        Log.i("作者 $steamId 第 $page 页：共 ${r.total} 个，这页 ${r.ids.size} 个")
+        return r
     }
 
     /** 抓作者的创意工坊网页（不登录也能用，但看不到成人作品）；也读关注按钮的状态。 */
