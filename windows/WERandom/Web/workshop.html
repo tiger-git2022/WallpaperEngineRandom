@@ -80,14 +80,11 @@ a:hover { text-decoration: underline; }
 .badges { position: absolute; left: 6px; top: 6px; display: flex; gap: 4px; }
 .badge { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 4px; background: rgba(0,0,0,.72); color: #fff; }
 .badge.new { background: var(--new); }
-.badge.Questionable { color: #ffd166; }
-.badge.Mature { color: #ff7b7b; }
 .badge.sub { position: absolute; right: 6px; bottom: 6px; background: rgba(16,124,16,.9); }
 .badge.dl { position: absolute; right: 6px; bottom: 6px; background: rgba(0,0,0,.72); color: var(--warn); }
 .badge.type { position: absolute; right: 6px; top: 6px; font-weight: 600; }
 .tile .t { margin-top: 6px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tile .s { color: var(--fg3); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tile.seen .t { color: var(--fg2); font-weight: 500; }
 /* timeline: a Weibo-style feed of posts; uploads in a row by one author become one post with a picture grid */
 .feed { max-width: 720px; margin: 0 auto; }
 /* the timeline and the author list have no side panel: everything is inside the posts */
@@ -112,7 +109,6 @@ a:hover { text-decoration: underline; }
 #lightbox.on { display: flex; }
 #lightbox img { max-width: 96vw; max-height: 94vh; object-fit: contain; }
 .post { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; margin-bottom: 8px; }
-.post.read { opacity: .82; }
 .ph { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .ph .av { width: 40px; height: 40px; border-radius: 50%; background: var(--chip); cursor: pointer; }
 .ph .grow { flex: 1; min-width: 0; }
@@ -177,6 +173,19 @@ a:hover { text-decoration: underline; }
 .chip { background: var(--chip); border-radius: 12px; padding: 2px 9px; font-size: 12px; color: var(--fg2); cursor: pointer; }
 .chip:hover { color: var(--fg); outline: 1px solid var(--accent); }
 .desc { white-space: pre-wrap; color: var(--fg2); user-select: text; word-break: break-word; border-top: 1px solid var(--line); padding-top: 10px; margin-top: 6px; max-height: 420px; overflow: auto; }
+/* comments: under the detail panel, and under a timeline post after "评论" */
+.cm { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 6px; }
+.cm h4 { margin: 4px 0 4px; font-size: 13px; font-weight: 600; }
+.cmt { display: flex; gap: 9px; padding: 7px 0; }
+.cmt img { width: 32px; height: 32px; border-radius: 50%; background: var(--chip); cursor: pointer; flex-shrink: 0; }
+.cmt .n { font-weight: 600; font-size: 13px; cursor: pointer; }
+.cmt .n:hover { color: var(--accent); }
+.cmt .w { color: var(--fg3); font-size: 12px; margin-left: 8px; }
+.cmt .x { white-space: pre-wrap; word-break: break-word; color: var(--fg2); user-select: text; margin-top: 1px; }
+.cm .foot { padding: 6px 0 2px; color: var(--fg3); font-size: 12px; }
+#totop { position: fixed; bottom: 24px; width: 42px; height: 42px; padding: 0; border-radius: 50%; display: none; z-index: 6; background: var(--solid); box-shadow: 0 6px 18px var(--shadow); font-size: 18px; line-height: 1; }
+#totop.on { display: block; }
+#totop:hover { color: var(--accent); }
 .status { font-size: 12px; margin-top: 4px; }
 .status.ok { color: var(--ok); } .status.wait { color: var(--warn); } .status.err { color: var(--danger); }
 #toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); background: var(--solid); border: 1px solid var(--line); border-radius: 8px; padding: 9px 16px; box-shadow: 0 8px 24px var(--shadow); display: none; z-index: 9; max-width: 70vw; }
@@ -212,6 +221,7 @@ a:hover { text-decoration: underline; }
   </div>
 </div>
 <div id="toast"></div>
+<button id="totop" title="回到顶部（在时间线上同时全部记为已读）">↑</button>
 <div id="lightbox"><img alt=""></div>
 <script>
 'use strict';
@@ -361,6 +371,54 @@ function openTab(tab) {
   current = views[tab]; renderTabs(); renderList();
   if (!current.ids.length && !current.done) loadMore(current);
   $('#main').scrollTop = current.scroll || 0;
+  if (tab === 'timeline' && current.settled && !posRestored) restorePosition(current);
+  updateTop();
+}
+// clicking the tab that is already shown: not at the top → back to the top (on the timeline everything in between
+// counts as read, like the phone app); already at the top → reload
+function tabClick(tab) {
+  const shown = tab === S.tab && (tab === 'following' ? !current : current && current === views[tab]);
+  if (!shown) { openTab(tab); return; }
+  if ($('#main').scrollTop > 0) { goTop(); return; }
+  if (tab === 'following') loadFollows();
+  else { views[tab] = null; openTab(tab); }
+}
+// the round "↑" button and the tab click
+function goTop() {
+  const main = $('#main');
+  if (current && current.kind === 'timeline') { markAllRead(); main.scrollTop = 0; }
+  else main.scrollTo({ top: 0, behavior: 'smooth' });
+  updateTop();
+}
+function updateTop() {
+  const main = $('#main'), b = $('#totop');
+  const on = main.scrollTop > 600;
+  b.classList.toggle('on', on);
+  if (on) b.style.right = Math.max(12, window.innerWidth - main.getBoundingClientRect().right + 22) + 'px';
+}
+
+// ---------- timeline position (where you were last time) ----------
+// S.tlPos = { id: first wallpaper of the post at the top of the list, off: how far that post is scrolled past the top }
+let posRestored = false, posTimer = 0;
+function savePosition() {
+  const v = current; if (!v || v.kind !== 'timeline' || !posRestored) return;
+  const main = $('#main'), top = main.getBoundingClientRect().top;
+  const post = [...document.querySelectorAll('#grid > .post')].find(p => p.getBoundingClientRect().bottom > top + 1);
+  const tile = post && post.querySelector('.tile'); if (!tile) return;
+  const pos = { id: tile.dataset.id, off: Math.round(top - post.getBoundingClientRect().top) };
+  if (!S.tlPos || S.tlPos.id !== pos.id || S.tlPos.off !== pos.off) { S.tlPos = pos; save(); }
+}
+// once per start, after the timeline has loaded: go back to that post; if it is gone, to the "already read" line
+function restorePosition(v) {
+  posRestored = true;
+  const main = $('#main'); if (main.scrollTop > 50) return;   // already scrolled by hand
+  const pos = S.tlPos;
+  const tile = pos && document.querySelector(`#grid .tile[data-id="${pos.id}"]`);
+  let el = tile && tile.closest('.post'), off = el ? pos.off : -60;
+  if (!el) el = $('#divider');
+  if (!el) return;
+  main.scrollTop += el.getBoundingClientRect().top - main.getBoundingClientRect().top + off;
+  updateTop();
 }
 function openAuthor(steamid) {
   if (current) { current.scroll = $('#main').scrollTop; stack.push(current); } else stack.push({ kind: 'following' });
@@ -425,6 +483,7 @@ function afterTimelineLoad(v) {
   const last = items.get(v.ids[v.ids.length - 1]);
   if (!v.done && !v.error && last.created > S.readUpTo && v.ids.length < 600) { loadMore(v); return; }
   updateBoundary(v);
+  if (!v.settled) { v.settled = true; if (v === current && !posRestored) restorePosition(v); }
 }
 function updateBoundary(v) {
   const b = boundaryIndex(v);
@@ -499,7 +558,7 @@ function placeDivider(v) {
 // mode: 'grid' (browse / author pages), 'pic' (one picture of a timeline post), 'big' (the only picture of a post)
 function tileHtml(it, v, mode) {
   mode = mode || 'grid';
-  const age = ageOf(it), type = typeOf(it), st = subState(it.id);
+  const type = typeOf(it), st = subState(it.id);
   const isNew = v.kind === 'timeline' && it.created > S.readUpTo && !S.seen[it.id];
   const read = v.kind === 'timeline' && !isNew;
   const p = S.profiles[it.creator];
@@ -507,7 +566,7 @@ function tileHtml(it, v, mode) {
   const canSub = me.loggedIn && !st && it.app === 431960;
   return `<div class="tile${read ? ' seen' : ''}${selected === it.id ? ' sel' : ''}" data-id="${it.id}" data-mode="${mode}">
     <div class="thumb"><img loading="lazy" src="${esc(small(it.preview, mode === 'big' ? 760 : 320))}" data-small="${esc(small(it.preview, mode === 'big' ? 760 : 320))}" alt="">
-      <div class="badges">${isNew ? '<span class="badge new">NEW</span>' : ''}${age && age !== 'Everyone' ? `<span class="badge ${age}">${LABEL[age]}</span>` : ''}</div>
+      <div class="badges">${isNew ? '<span class="badge new">NEW</span>' : ''}</div>
       ${type ? `<span class="badge type">${LABEL[type]}</span>` : ''}
       ${st === 'installed' ? '<span class="badge sub">✓ 已订阅</span>' : st === 'pending' ? '<span class="badge dl">下载中</span>' : ''}
       ${canSub ? '<button class="qs" title="直接订阅，Steam 会自动下载">+ 订阅</button>' : ''}
@@ -544,7 +603,7 @@ function groupHtml(post, v) {
 function postHtml(it, v) {
   const p = S.profiles[it.creator] || {};
   const read = it.created <= S.readUpTo;
-  const meta = [LABEL[typeOf(it)], LABEL[ageOf(it)], (it.tags.find(t => / x \d/.test(t)) || '').replace(' x ', '×')].filter(Boolean).join(' · ');
+  const meta = [LABEL[typeOf(it)], (it.tags.find(t => / x \d/.test(t)) || '').replace(' x ', '×')].filter(Boolean).join(' · ');
   return `<div class="post${read ? ' read' : ''}" data-creator="${it.creator}" data-post="${it.id}">
     <div class="ph"><img class="av" data-avatar="${it.creator}" src="${esc(p.a || '')}" alt=""><div class="grow"><div class="n" data-author="${it.creator}">${esc(p.n || '…')}</div><div class="s" title="${date(it.created)}">${ago(it.created)}${meta ? ' · ' + esc(meta) : ''}</div></div></div>
     ${bodyHtml(it, v)}
@@ -572,7 +631,7 @@ function postActions(it) {
     : st === 'installed' ? `<span class="done">✓ 已订阅</span><a data-unsub="${it.id}">取消订阅</a>`
     : st === 'pending' ? `<span class="wait">已订阅 · 等待 Steam 下载</span><a data-unsub="${it.id}">取消订阅</a>`
     : `<button class="primary" data-sub="${it.id}">+ 订阅</button>`;
-  return `${sub}<a data-works="${it.creator}">作者的全部作品</a><a data-steam="${it.id}">在 Steam 中打开</a><a data-web="${it.id}">网页</a>`;
+  return `${sub}<a data-works="${it.creator}">作者的全部作品</a><a data-cmt="${it.id}">评论</a><a data-steam="${it.id}">在 Steam 中打开</a><a data-web="${it.id}">网页</a>`;
 }
 // in a merged post, clicking a picture opens that wallpaper's details inside the post (again: closes them)
 function toggleInline(tile) {
@@ -786,6 +845,7 @@ function renderDetail(it) {
     </div>
     <div class="chips">${shownTags.map(t => `<span class="chip" data-tag="${esc(t)}">${esc(LABEL[t] || t)}</span>`).join('')}</div>
     <div class="desc">${esc(bbcode(it.description != null ? it.description : it.short)) || '<span style="color:var(--fg3)">没有简介</span>'}</div>
+    <div class="cm" data-cm="${it.id}"></div>
   </div>`);
   const big = el.querySelector('.big');
   loadAnimated(big, it.preview, small(it.preview, 760));
@@ -800,6 +860,7 @@ function renderDetail(it) {
   for (const c of el.querySelectorAll('.chip')) c.onclick = () => searchTag(c.dataset.tag);
   renderActions(el.querySelector('.actions'), it);
   const d = $('#detail'); d.innerHTML = ''; d.appendChild(el); d.scrollTop = 0;
+  loadComments(it.id);
 }
 function renderActions(box, it) {
   box.innerHTML = '';
@@ -847,6 +908,68 @@ function searchTag(tag) {
   $('#search').value = tag; views.browse = null; openTab('browse');
 }
 
+// ---------- comments ----------
+// Steam sends the comments as HTML; it is parsed in an inert document (nothing runs or loads) and only text is kept
+const comments = new Map();               // id -> { list, total, done, loading, error }
+function parseComments(html) {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  return [...doc.querySelectorAll('.commentthread_comment')].map(c => {
+    const link = c.querySelector('.commentthread_author_link');
+    const mini = link && link.getAttribute('data-miniprofile');
+    // the avatar is the picture inside the author link (animated avatars only have srcset); the outer one is the frame
+    const img = c.querySelector('.commentthread_comment_avatar a img') || c.querySelector('.commentthread_comment_avatar img');
+    const avatar = img ? (img.getAttribute('src') || (img.getAttribute('srcset') || '').trim().split(/[\s,]+/)[0] || '') : '';
+    const ts = c.querySelector('[data-timestamp]');
+    const t = c.querySelector('.commentthread_comment_text');
+    if (t) {
+      for (const x of t.querySelectorAll('script, style')) x.remove();
+      for (const x of t.querySelectorAll('.needs_content_check')) x.replaceWith('（这条评论还在等 Steam 审核）');
+      for (const br of t.querySelectorAll('br')) br.replaceWith('\n');
+    }
+    return {
+      name: link ? (link.querySelector('bdi') || link).textContent.trim() : '', avatar, time: ts ? +ts.getAttribute('data-timestamp') || 0 : 0,
+      text: t ? t.textContent.replace(/[ \t]+\n/g, '\n').trim() : '', steamid: /^\d+$/.test(mini || '') ? (76561197960265728n + BigInt(mini)).toString() : ''
+    };
+  }).filter(m => m.text || m.name);
+}
+function commentsHtml(id) {
+  const c = comments.get(id); if (!c) return '';
+  const rows = c.list.map(m => {
+    const who = m.steamid ? ` data-cauthor="${m.steamid}"` : '';
+    return `<div class="cmt"><img src="${esc(m.avatar)}" alt=""${who}><div style="flex:1;min-width:0"><div><span class="n"${who}>${esc(m.name)}</span><span class="w" title="${m.time ? date(m.time) : ''}">${ago(m.time)}</span></div><div class="x">${esc(m.text)}</div></div></div>`;
+  }).join('');
+  const foot = c.loading ? '<div class="foot"><span class="spin"></span> 正在读取评论…</div>'
+    : c.error ? `<div class="foot">评论读取失败：${esc(c.error)} <a data-cmore="${id}">重试</a></div>`
+    : !c.list.length ? '<div class="foot">还没有评论</div>'
+    : !c.done ? `<div class="foot"><a data-cmore="${id}">更多评论</a></div>` : '';
+  return `<h4>评论${c.total ? '（' + c.total + '）' : ''}</h4>${rows}${foot}`;
+}
+function paintComments(id) { for (const box of document.querySelectorAll(`.cm[data-cm="${id}"]`)) box.innerHTML = commentsHtml(id); }
+// first call: the first page; more = true ("更多评论" / "重试"): the next page
+async function loadComments(id, more) {
+  const it = items.get(id); if (!it) return;
+  let c = comments.get(id); if (!c) comments.set(id, c = { list: [], total: 0, done: false, loading: false, error: null, tried: false });
+  if (c.loading || c.done || (c.tried && !more)) { paintComments(id); return; }
+  c.tried = true;
+  c.loading = true; c.error = null; paintComments(id);
+  try {
+    const r = await host.call('comments', { owner: it.creator, id, start: c.list.length, count: 20 });
+    if (!r || !r.success) throw new Error(/private/i.test((r && r.error) || '') ? '作者的主页不公开，看不到评论' : (r && r.error) || '读取评论失败');
+    const list = parseComments(r.comments_html || '');
+    c.total = +r.total_count || 0; c.list.push(...list);
+    if (!list.length || c.list.length >= c.total) c.done = true;
+  } catch (e) { c.error = errText(e); }
+  c.loading = false; paintComments(id);
+}
+// "评论" in a timeline post: show / hide the comments under that post
+function toggleComments(a) {
+  const id = a.dataset.cmt, pf = a.closest('.pf'); if (!pf) return;
+  const box = pf.nextElementSibling;
+  if (box && box.matches(`.cm[data-cm="${id}"]`)) { box.remove(); return; }
+  pf.insertAdjacentHTML('afterend', `<div class="cm" data-cm="${id}"></div>`);
+  loadComments(id);
+}
+
 // ---------- installed / pending ----------
 async function refreshInstalled() {
   try {
@@ -873,7 +996,15 @@ function applyTheme(theme, accent) {
   const q = new URLSearchParams(location.search); applyTheme(q.get('theme'), q.get('accent'));
   try { const st = await host.call('loadState'); if (st) S = Object.assign(S, JSON.parse(st)); } catch (e) { }
   S.filters = Object.assign({ type: [], age: [], res: [], genre: [] }, S.filters || {});
-  for (const b of document.querySelectorAll('.tab')) b.onclick = () => openTab(b.dataset.tab);
+  for (const b of document.querySelectorAll('.tab')) b.onclick = () => tabClick(b.dataset.tab);
+  $('#totop').onclick = goTop;
+  $('#main').addEventListener('scroll', () => { updateTop(); clearTimeout(posTimer); posTimer = setTimeout(savePosition, 500); }, { passive: true });
+  window.addEventListener('resize', updateTop);
+  document.addEventListener('click', e => {
+    const more = e.target.closest('[data-cmore]'); if (more) { loadComments(more.dataset.cmore, true); return; }
+    const who = e.target.closest('[data-cauthor]'); if (who) { openAuthor(who.dataset.cauthor); return; }
+    const cmt = e.target.closest('[data-cmt]'); if (cmt) toggleComments(cmt);
+  });
   const lb = $('#lightbox'), closeLb = () => { lb.classList.remove('on'); lb.querySelector('img').src = ''; };
   lb.onclick = closeLb; document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLb(); });
   $('#search').onkeydown = e => { if (e.key === 'Enter') { const t = $('#search').value.trim(); if (t && S.sort.startsWith('trend')) { S.sort = 'text'; $('#sort').value = 'text'; } views.browse = null; openTab('browse'); } };
