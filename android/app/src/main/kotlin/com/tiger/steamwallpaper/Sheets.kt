@@ -154,7 +154,7 @@ private fun DetailContent(it: Item, scroll: Modifier) {
         if (ws.isSubscribed(it.id)) {
             Text("已订阅，电脑上的 Steam 客户端会自动下载（Steam 要在运行）", fontSize = 12.sp, color = Tones.Ok, modifier = Modifier.padding(top = 6.dp))
         } else if (!ws.me.loggedIn) {
-            Pill("登录 Steam 后可以直接订阅", onClick = { LocalActions.login() }, primary = true, modifier = Modifier.padding(top = 10.dp))
+            GlassButton("登录 Steam 后可以直接订阅", onClick = { LocalActions.login() }, primary = true, modifier = Modifier.padding(top = 10.dp))
         }
         Spacer(Modifier.height(12.dp))
         val total = (it.votesUp ?: 0) + (it.votesDown ?: 0)
@@ -220,9 +220,9 @@ private fun CommentList(id: String) {
         }
         c.error != null -> Row(verticalAlignment = Alignment.CenterVertically) {
             Text("评论读取失败：${c.error}", fontSize = 13.sp, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
-            Pill("重试", onClick = { ws.loadComments(id) })
+            GlassButton("重试", onClick = { ws.loadComments(id) })
         }
-        !c.done -> Pill("更多评论", onClick = { ws.loadComments(id) }, modifier = Modifier.padding(top = 6.dp))
+        !c.done -> GlassButton("更多评论", onClick = { ws.loadComments(id) }, modifier = Modifier.padding(top = 6.dp))
     }
 }
 
@@ -233,8 +233,8 @@ fun FilterSheet(open: Boolean, onDismiss: () -> Unit) {
     GlassSheet(open, onDismiss, maxHeight = 0.85f) { scroll ->
         SheetTitle("筛选") {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Pill("清除筛选", onClick = { ws.clearFilters() }, enabled = ws.store.filterCount > 0)
-                Pill("完成", onClick = onDismiss, primary = true)
+                GlassButton("清除筛选", onClick = { ws.clearFilters() }, enabled = ws.store.filterCount > 0)
+                GlassButton("完成", onClick = onDismiss, primary = true)
             }
         }
         Column(scroll.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 18.dp)) {
@@ -269,7 +269,7 @@ fun AccountSheet(open: Boolean, onDismiss: () -> Unit) {
                         Text(me.name.ifEmpty { "Steam 账号" }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                         Text(me.steamId, fontSize = 12.sp)
                     }
-                    Pill("退出登录", onClick = { ws.logout(); onDismiss() })
+                    GlassButton("退出登录", onClick = { ws.logout(); onDismiss() })
                 }
                 Text(
                     "订阅会加到这个账号上，由登录同一账号的电脑 Steam 客户端下载。",
@@ -278,7 +278,7 @@ fun AccountSheet(open: Boolean, onDismiss: () -> Unit) {
             } else {
                 Text("还没有登录 Steam", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text("请登录电脑上 Steam 客户端用的那个账号，订阅的壁纸才会下载到那台电脑。", fontSize = 13.sp, modifier = Modifier.padding(vertical = 8.dp))
-                Pill("登录 Steam", onClick = { onDismiss(); LocalActions.login() }, primary = true)
+                GlassButton("登录 Steam", onClick = { onDismiss(); LocalActions.login() }, primary = true)
             }
             HorizontalDivider(Modifier.padding(vertical = 14.dp))
             SwitchRow("合并同一作者的连续上传", "时间线里同一作者 6 小时内连着发的（最多 4 个）合成一条", ws.store.mergePosts) { ws.setMerge(it) }
@@ -302,10 +302,13 @@ fun AccountSheet(open: Boolean, onDismiss: () -> Unit) {
                 if (updater.checking) {
                     CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                 } else {
-                    Pill("检查更新", onClick = { updater.check(manual = true) })
+                    GlassButton("检查更新", onClick = { updater.check(manual = true) })
                 }
             }
-            Pill("在 GitHub 查看所有版本", onClick = { openUrl(context, "https://github.com/${BuildConfig.REPO}/releases") }, modifier = Modifier.padding(top = 12.dp))
+            Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                GlassButton("在 GitHub 查看所有版本", onClick = { openUrl(context, "https://github.com/${BuildConfig.REPO}/releases") })
+                GlassButton("查看日志", onClick = { onDismiss(); LocalActions.log() })
+            }
         }
     }
 }
@@ -337,6 +340,33 @@ private fun GlassSlider(title: String, summary: String, value: Int, show: (Int) 
     }
 }
 
+// ---- log ----
+
+/** 日志面板：App 的运行记录（读作者作品、订阅、出错……），可以复制发给开发者。 */
+@Composable
+fun LogSheet(open: Boolean, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    var text by remember { mutableStateOf("") }
+    LaunchedEffect(open) { if (open) text = Log.read().takeLast(60_000) }
+    GlassSheet(open, onDismiss, maxHeight = 0.9f) { scroll ->
+        SheetTitle("日志") {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                GlassButton("清空", onClick = { Log.clear(); text = "" })
+                GlassButton("复制", primary = true, onClick = {
+                    val cm = context.getSystemService(android.content.ClipboardManager::class.java)
+                    cm?.setPrimaryClip(android.content.ClipData.newPlainText("SteamWallpaper 日志", text))
+                    ws.toast("已复制日志")
+                })
+            }
+        }
+        val listState = rememberScrollState()
+        LaunchedEffect(text) { listState.scrollTo(listState.maxValue) }
+        SelectionContainer(scroll.verticalScroll(listState).padding(horizontal = 20.dp).padding(bottom = 18.dp)) {
+            Text(text.ifEmpty { "还没有日志" }, fontSize = 12.sp, lineHeight = 17.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+        }
+    }
+}
+
 // ---- update ----
 
 @Composable
@@ -363,10 +393,10 @@ fun UpdateSheet(activity: Activity) {
                 Text(updater.message, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 10.dp))
             }
             Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Pill("下载并安装", onClick = { updater.download(activity) }, enabled = p == null, primary = true)
-                Pill("以后再说", onClick = { updater.skip() })
+                GlassButton("下载并安装", onClick = { updater.download(activity) }, enabled = p == null, primary = true)
+                GlassButton("以后再说", onClick = { updater.skip() })
             }
-            Pill("打开发布页", onClick = { openUrl(context, rel.page) }, modifier = Modifier.padding(top = 12.dp))
+            GlassButton("打开发布页", onClick = { openUrl(context, rel.page) }, modifier = Modifier.padding(top = 12.dp))
         }
     }
 }

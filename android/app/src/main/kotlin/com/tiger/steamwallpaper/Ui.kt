@@ -165,10 +165,14 @@ fun PreviewImage(
     }
 }
 
+/** 读到过的预览图宽高比（这次运行期间）。 */
+private val Ratios = HashMap<String, Float>()
+
 /** 整张图按自己的比例显示（不裁成方形），最高 [maxHeight]，居中。 */
 @Composable
 fun BigPicture(url: String, modifier: Modifier = Modifier, maxHeight: Dp = 480.dp, inner: Modifier = Modifier, onClick: () -> Unit) {
-    var ratio by remember(url) { mutableStateOf<Float?>(null) }
+    // 宽高比读到一次就记住（滑出屏幕再回来、在详情里再打开都不用重新撑开）；还不知道时按方形占位，预览图大多是方的
+    var ratio by remember(url) { mutableStateOf<Float?>(Ratios[url] ?: 1f) }
     BoxWithConstraints(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         val r = ratio
         val w: Dp
@@ -190,7 +194,11 @@ fun BigPicture(url: String, modifier: Modifier = Modifier, maxHeight: Dp = 480.d
             Modifier.size(w, h).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceVariant)
                 .then(inner).clickable(onClick = onClick),
         ) {
-            PreviewImage(url, animate = true, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit, onRatio = { if (ratio == null) ratio = it.coerceIn(0.4f, 3f) })
+            PreviewImage(url, animate = true, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit, onRatio = {
+                val r = it.coerceIn(0.4f, 3f)
+                Ratios[url] = r
+                ratio = r
+            })
         }
     }
 }
@@ -241,9 +249,9 @@ fun FollowButton(id: String, modifier: Modifier = Modifier) {
     val busy = ws.busy["follow:$id"] == true
     // 关注和已关注一样大小，只是关注是实心的主题色
     if (on) {
-        Pill(if (busy) "…" else "已关注", onClick = { ws.follow(id, false) }, modifier = modifier)
+        GlassButton(if (busy) "…" else "已关注", onClick = { ws.follow(id, false) }, modifier = modifier)
     } else {
-        Pill(if (busy) "…" else "+ 关注", onClick = { ws.follow(id, true) }, modifier = modifier, primary = true)
+        GlassButton(if (busy) "…" else "+ 关注", onClick = { ws.follow(id, true) }, modifier = modifier, primary = true)
     }
 }
 
@@ -264,9 +272,9 @@ fun Pill(
     leading: ImageVector? = null,
     trailing: ImageVector? = null,
     primary: Boolean = false,
+    shape: androidx.compose.ui.graphics.Shape = PillShape,
 ) {
     val dark = isDark()
-    val shape = PillShape
     val scheme = MaterialTheme.colorScheme
     val tile = LocalTileBackdrop.current
     val content = (if (primary) scheme.primary else scheme.onSurface).let { if (enabled) it else it.copy(alpha = 0.4f) }
@@ -285,10 +293,11 @@ fun Pill(
             .clip(shape).background(frost, shape).background(light, shape)
             .then(if (dark) Modifier.border(1.dp, Color.White.copy(alpha = if (selected || primary) 0.7f else 0.45f), shape) else Modifier)
     }
+    val pad = if (shape === ButtonShape) 18.dp else 14.dp
     Row(
-        modifier.heightIn(min = PillHeight).then(surface)
+        modifier.heightIn(min = if (shape === ButtonShape) ButtonHeight else PillHeight).then(surface)
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(start = if (leading != null) 8.dp else 14.dp, end = if (trailing != null) 8.dp else 14.dp, top = 4.dp, bottom = 4.dp),
+            .padding(start = if (leading != null) 8.dp else pad, end = if (trailing != null) 8.dp else pad, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
     ) {
@@ -305,6 +314,20 @@ fun Pill(
 }
 
 val PillShape = RoundedCornerShape(8.dp)
+
+/** 按钮（订阅、关注、检查更新……）：和 Material 按钮一样的圆头，样式是玻璃（同 [Pill]）。 */
+val ButtonShape = RoundedCornerShape(50)
+val ButtonHeight = 36.dp
+
+@Composable
+fun GlassButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    leading: ImageVector? = null,
+    primary: Boolean = false,
+) = Pill(text, onClick, modifier, enabled = enabled, leading = leading, primary = primary, shape = ButtonShape)
 
 /** 一排会换行的胶囊，行和行之间留空。 */
 @Composable
@@ -326,10 +349,10 @@ fun SubscribeRow(it: Item, big: Boolean = false) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("✓ 已订阅", color = Tones.Ok, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.padding(start = 4.dp))
             Spacer(Modifier.width(10.dp))
-            Pill("取消订阅", onClick = { ws.subscribe(it, false) })
+            GlassButton("取消订阅", onClick = { ws.subscribe(it, false) })
         }
     } else {
-        Pill("+ 订阅", onClick = { ws.subscribe(it, true) }, primary = true, modifier = if (big) Modifier.fillMaxWidth().heightIn(min = 44.dp) else Modifier)
+        GlassButton("+ 订阅", onClick = { ws.subscribe(it, true) }, primary = true, modifier = if (big) Modifier.fillMaxWidth().heightIn(min = 44.dp) else Modifier)
     }
 }
 
@@ -356,8 +379,8 @@ fun MoreFooter(v: ListView) {
             v.error != null -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("加载失败：${v.error}", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 16.dp))
                 Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Pill("重试", onClick = { ws.loadMore(v) })
-                    if (v.errorStatus == 401) Pill("重新登录", onClick = { LocalActions.login() })
+                    GlassButton("重试", onClick = { ws.loadMore(v) })
+                    if (v.errorStatus == 401) GlassButton("重新登录", onClick = { LocalActions.login() })
                 }
             }
             v.done && v.ids.isNotEmpty() -> Text("没有更多了", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
@@ -369,6 +392,7 @@ fun MoreFooter(v: ListView) {
 object LocalActions {
     var login: () -> Unit = {}
     var lightbox: (String) -> Unit = {}
+    var log: () -> Unit = {}
 }
 
 @Composable
@@ -379,7 +403,7 @@ fun EmptyState(title: String, text: String, button: String? = null, onClick: () 
         Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center, lineHeight = 22.sp)
         if (button != null) {
             Spacer(Modifier.height(18.dp))
-            Pill(button, onClick = onClick, primary = true)
+            GlassButton(button, onClick = onClick, primary = true)
         }
     }
 }

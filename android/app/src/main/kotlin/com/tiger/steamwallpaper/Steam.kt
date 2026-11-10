@@ -289,8 +289,8 @@ class Steam {
                 body
             }
         }
-        val r = JSONObject(text).optJSONObject("response") ?: throw SteamException(0, "Steam 接口没有返回内容")
-        if (!r.has("total")) throw SteamException(0, "Steam 接口没有返回作品数")
+        val r = JSONObject(text).optJSONObject("response") ?: throw SteamException(0, "Steam 接口没有返回内容：${text.take(200)}")
+        if (!r.has("total")) throw SteamException(0, "Steam 接口没有返回作品数：${text.take(200)}")
         val arr = r.optJSONArray("publishedfiledetails")
         val ids = (0 until (arr?.length() ?: 0)).mapNotNull { arr!!.optJSONObject(it)?.optString("publishedfileid")?.takeIf { s -> s.isNotEmpty() } }
         return CreatorPage(ids, r.optInt("total"), false, false, text)
@@ -298,6 +298,7 @@ class Steam {
 
     /** 抓作者的创意工坊网页（不登录也能用，但看不到成人作品）；也读关注按钮的状态。 */
     private suspend fun scrapeCreator(steamId: String, page: Int): CreatorPage {
+        Log.i("抓作者网页 $steamId（登录 Cookie：${if (cookies.containsKey("steamLoginSecure")) "有" else "没有"}）")
         val html = get("$COMMUNITY/profiles/$steamId/myworkshopfiles/?appid=$APP_ID&browsefilter=myfiles&sortmethod=creationorder&numperpage=30&p=${maxOf(1, page)}")
         val ids = Regex("data-publishedfileid=\"(\\d+)\"").findAll(html).map { it.groupValues[1] }.distinct().toList()
         // “正在显示第 1 - 30 项，共 133 项条目” / “Showing 1-30 of 133 entries”

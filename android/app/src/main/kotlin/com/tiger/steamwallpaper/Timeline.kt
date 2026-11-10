@@ -255,7 +255,7 @@ private fun GroupPost(post: Post) {
         HorizontalDivider(Modifier.padding(top = 10.dp, bottom = 8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("点一张图查看，可以左右滑动切换", fontSize = 13.sp, modifier = Modifier.weight(1f).padding(end = 8.dp))
-            Pill("作者的全部作品", onClick = { ws.openAuthor(post.creator) })
+            GlassButton("作者的全部作品", onClick = { ws.openAuthor(post.creator) })
         }
     }
 }
@@ -304,8 +304,8 @@ fun WallpaperBody(it: Item, track: Boolean) {
         itemVerticalAlignment = Alignment.CenterVertically,
     ) {
         SubscribeRow(it)
-        Pill("作者的全部作品", onClick = { ws.openAuthor(it.creator) })
-        Pill("详情和评论", onClick = { ws.openDetail(it.id) })
+        GlassButton("作者的全部作品", onClick = { ws.openAuthor(it.creator) })
+        GlassButton("详情和评论", onClick = { ws.openDetail(it.id) })
     }
 }
 

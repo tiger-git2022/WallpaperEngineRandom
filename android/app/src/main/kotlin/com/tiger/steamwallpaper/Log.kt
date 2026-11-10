@@ -24,6 +24,15 @@ object Log {
         write(if (t == null) msg else "$msg：$t")
     }
 
+    /** 日志的全部内容（新的在最后）。 */
+    @Synchronized
+    fun read(): String = runCatching { file?.takeIf { it.exists() }?.readText() }.getOrNull().orEmpty()
+
+    @Synchronized
+    fun clear() {
+        runCatching { file?.writeText("") }
+    }
+
     @Synchronized
     private fun write(msg: String) {
         val f = file ?: return
