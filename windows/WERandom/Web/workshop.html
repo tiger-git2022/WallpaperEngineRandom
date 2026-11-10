@@ -56,6 +56,17 @@ a:hover { text-decoration: underline; }
 #sort { min-width: 130px; }
 #me { display: flex; align-items: center; gap: 8px; margin-left: auto; color: var(--fg2); white-space: nowrap; }
 #me img { width: 26px; height: 26px; border-radius: 50%; }
+#me .acct { display: flex; align-items: center; gap: 8px; padding: 3px 8px; color: var(--fg2); }
+#me .subtag { color: var(--fg3); font-size: 12px; }
+/* account menu: the browse account (timeline, browsing, following) and the subscribe account (only subscribes) */
+#accounts { position: fixed; top: 50px; right: 14px; width: 340px; max-width: calc(100vw - 28px); background: var(--solid); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px var(--shadow); padding: 12px 14px; z-index: 8; display: none; }
+#accounts.on { display: block; }
+.acc + .acc { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 12px; }
+.acc .h { font-weight: 600; }
+.acc .d { color: var(--fg3); font-size: 12px; margin: 2px 0 8px; }
+.acc .row { display: flex; align-items: center; gap: 9px; }
+.acc .row img { width: 28px; height: 28px; border-radius: 50%; background: var(--chip); }
+.acc .row .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 #body { display: grid; grid-template-columns: 200px minmax(0, 1fr) 380px; min-height: 0; }
 #body.nofilters { grid-template-columns: 0 minmax(0, 1fr) 380px; }
@@ -221,6 +232,7 @@ a:hover { text-decoration: underline; }
   </div>
 </div>
 <div id="toast"></div>
+<div id="accounts"></div>
 <button id="totop" title="回到顶部（在时间线上同时全部记为已读）">↑</button>
 <div id="lightbox"><img alt=""></div>
 <script>
@@ -345,11 +357,65 @@ function renderTabs() {
   for (const b of document.querySelectorAll('.tab')) b.classList.toggle('on', b.dataset.tab === S.tab && !(current && current.kind === 'author'));
   $('#sort').style.visibility = S.tab === 'browse' ? 'visible' : 'hidden';
 }
+// two Steam accounts: me = the browse account (timeline, browsing, creator pages, following);
+// me.sub = the subscribe account (only subscribes, e.g. the account the Steam client uses). Without it, the browse account subscribes.
+const subscriber = () => (me.sub && me.sub.loggedIn) ? me.sub : me;
+const twoAccounts = () => !!(me.loggedIn && me.sub && me.sub.loggedIn && me.sub.steamid !== me.steamid);
 function renderMe() {
-  const el = $('#me');
-  if (!me.loggedIn) { el.innerHTML = ''; const b = h('<button class="primary">登录 Steam</button>'); b.onclick = login; el.appendChild(b); return; }
-  el.innerHTML = `<img src="${esc(me.avatar)}" alt=""><span>${esc(me.name || me.steamid)}</span>`;
-  const out = h('<button class="ghost" title="退出这个 Steam 账号">退出</button>'); out.onclick = logout; el.appendChild(out);
+  const el = $('#me'); el.innerHTML = '';
+  if (!me.loggedIn) { const b = h('<button class="primary">登录 Steam</button>'); b.onclick = login; el.appendChild(b); }
+  else {
+    const b = h(`<button class="ghost acct" title="浏览账号和订阅账号"><img src="${esc(me.avatar)}" alt=""><span>${esc(me.name || me.steamid)}</span>${twoAccounts() ? `<span class="subtag">订阅：${esc(me.sub.name || me.sub.steamid)}</span>` : ''}<span class="subtag">▾</span></button>`);
+    b.onclick = e => { e.stopPropagation(); toggleAccounts(); };
+    el.appendChild(b);
+  }
+  if ($('#accounts').classList.contains('on')) renderAccounts();
+}
+function toggleAccounts(on) {
+  const box = $('#accounts'); on = on == null ? !box.classList.contains('on') : on;
+  box.classList.toggle('on', on); if (on) renderAccounts();
+}
+function renderAccounts() {
+  const box = $('#accounts'), s = me.sub || {};
+  const row = (a, act) => `<div class="row"><img src="${esc(a.avatar || '')}" alt=""><span class="grow">${esc(a.name || a.steamid)}</span><button class="ghost" data-a="${act}">退出</button></div>`;
+  box.innerHTML = `<div class="acc"><div class="h">浏览账号</div><div class="d">时间线、浏览、作者页、关注都用这个号。这个号看不到部分内容时，可以换一个没被屏蔽的号登录这里。</div>
+      ${me.loggedIn ? row(me, 'logout') : '<button class="primary" data-a="login">登录浏览账号</button>'}</div>
+    <div class="acc"><div class="h">订阅账号</div><div class="d">只负责订阅。请登录 <b>Steam 客户端里用的号</b>，订阅后由客户端下载；没登录时订阅用浏览账号。壁纸上的「已订阅」看的是本机 Steam 客户端的下载情况。</div>
+      ${s.available === false ? '<div class="d">订阅账号用不了：WebView2 初始化失败，详见日志。</div>' : s.loggedIn ? row(s, 'subLogout') : '<button class="primary" data-a="subLogin">登录订阅账号</button>'}
+      ${twoAccounts() ? `<button data-a="import" style="margin-top:12px;width:100%"${importing ? ' disabled' : ''}>把订阅账号关注的作者导入浏览账号</button><div class="d" style="margin:4px 0 0">只加不减；之后两个号的关注不会自动同步。</div>` : ''}</div>`;
+  box.onclick = e => { const b = e.target.closest('[data-a]'); if (!b) return; e.stopPropagation(); toggleAccounts(false); ACCOUNT_ACTIONS[b.dataset.a](); };
+}
+async function subLogin() {
+  try {
+    me = await host.call('subLogin'); renderMe(); const s = me.sub || {};
+    if (s.loggedIn) toast(s.steamid === me.steamid ? '订阅账号和浏览账号是同一个号' : '已登录订阅账号「' + (s.name || s.steamid) + '」，之后订阅都加到这个号上', 4500);
+    if (current) renderList(true);
+  } catch (e) { toast('登录订阅账号失败：' + errText(e), 6000); }
+}
+async function subLogout() {
+  try { me = await host.call('subLogout'); renderMe(); toast('已退出订阅账号，订阅改用浏览账号', 4000); if (current) renderList(true); }
+  catch (e) { toast('退出订阅账号失败：' + errText(e), 6000); }
+}
+// follow, with the browse account, everyone the subscribe account follows (only adds)
+let importing = false;
+async function importFollows() {
+  if (importing || !twoAccounts()) return;
+  importing = true;
+  try {
+    toast('正在读取订阅账号的关注…', 60000);
+    const theirs = await host.call('subFollowing');
+    const mine = new Set(S.follows);
+    const todo = theirs.filter(id => !mine.has(id) && id !== me.steamid);
+    let ok = 0, failed = 0;
+    for (let i = 0; i < todo.length; i++) {
+      toast(`正在关注 ${i + 1} / ${todo.length}`, 60000);
+      try { if (await host.call('follow', { steamid: todo[i], on: true })) { ok++; setFollow(todo[i], true, true); } else failed++; } catch (e) { failed++; }
+      await new Promise(r => setTimeout(r, 400));
+    }
+    toast(todo.length ? `导入了 ${ok} 个关注${failed ? `，${failed} 个失败` : ''}（订阅账号共关注 ${theirs.length} 个）` : `订阅账号关注的 ${theirs.length} 个作者，浏览账号都已经关注了`, 6000);
+    if (ok) { ensureProfiles(todo); views.timeline = null; loadFollows(); if (current && current.kind === 'timeline') openTab('timeline'); }
+  } catch (e) { toast('导入关注失败：' + errText(e), 6000); }
+  importing = false;
 }
 async function login() {
   try { me = await host.call('login'); renderMe(); if (me.loggedIn) { toast('已登录 ' + (me.name || '')); await afterLogin(); } }
@@ -357,6 +423,7 @@ async function login() {
 }
 async function logout() { me = await host.call('logout'); renderMe(); for (const k in views) views[k] = null; openTab(S.tab); }
 async function afterLogin() { for (const k in views) views[k] = null; loadFollows(); openTab(S.tab); }
+const ACCOUNT_ACTIONS = { login, logout, subLogin, subLogout, import: importFollows };
 
 // ---------- list views ----------
 // view: { kind: 'timeline'|'browse'|'author', key, ids: [], cursor, page, done, loading, total, error, author }
@@ -431,7 +498,7 @@ function back() {
 }
 
 function needLogin(main) {
-  main.innerHTML = `<div class="empty"><h3>登录 Steam 后使用创意工坊</h3>时间线、搜索、订阅和关注都要用你的 Steam 账号。<br>请登录 <b>Steam 客户端里用的那个账号</b>，订阅的壁纸才会下载到这台电脑。<br><button class="primary">登录 Steam</button></div>`;
+  main.innerHTML = `<div class="empty"><h3>登录 Steam 后使用创意工坊</h3>时间线、搜索、订阅和关注都要用你的 Steam 账号。<br>一般登录 <b>Steam 客户端里用的那个账号</b>，订阅的壁纸才会下载到这台电脑。<br>如果那个号看不到部分内容，可以在这里登录另一个号浏览，再在右上角的账号菜单里把客户端的号登录为「订阅账号」。<br><button class="primary">登录 Steam</button></div>`;
   main.querySelector('button').onclick = login;
 }
 
@@ -661,8 +728,11 @@ function renderList(keepScroll) {
   const top = main.scrollTop;
   if (!me.loggedIn && v.kind !== 'author') { needLogin(main); return; }
   main.innerHTML = '';
-  if (me.loggedIn && me.clientSteamid && me.clientSteamid !== me.steamid)
-    main.appendChild(h(`<div class="warnbox">这里登录的是「${esc(me.name)}」，但 Steam 客户端登录的是「${esc(me.clientName || me.clientSteamid)}」。订阅会加到这里登录的账号上，Steam 客户端不会下载。请退出后换成客户端的账号。</div>`));
+  const sb = subscriber(), client = esc(me.clientName || me.clientSteamid);
+  if (me.loggedIn && me.clientSteamid && sb.steamid && me.clientSteamid !== sb.steamid)
+    main.appendChild(h(`<div class="warnbox">${sb === me
+      ? `订阅会加到浏览账号「${esc(me.name)}」上，但 Steam 客户端登录的是「${client}」，客户端不会下载。请在右上角的<a data-acc>账号菜单</a>里把客户端的号登录为订阅账号。`
+      : `订阅账号是「${esc(sb.name || sb.steamid)}」，但 Steam 客户端登录的是「${client}」，客户端不会下载。请在右上角的<a data-acc>账号菜单</a>里把订阅账号换成客户端的号。`}</div>`));
   if (v.kind === 'author') renderAuthorHead(main, v);
   const bar = h('<div class="bar"></div>');
   if (v.kind === 'timeline') {
@@ -881,10 +951,17 @@ async function doSubscribe(it, on) {
   try {
     const ok = await host.call('subscribe', { id: it.id, on });
     if (!ok) throw new Error('Steam 没有确认');
-    if (on) { S.pending[it.id] = Date.now(); unsubscribed.delete(it.id); toast('已订阅「' + it.title + '」，Steam 客户端会自动下载'); }
-    else { delete S.pending[it.id]; unsubscribed.add(it.id); toast('已取消订阅'); }
+    const to = twoAccounts() ? '订阅账号' : '';
+    if (on) { S.pending[it.id] = Date.now(); unsubscribed.delete(it.id); toast('已订阅「' + it.title + '」' + (to ? '到' + to : '') + '，Steam 客户端会自动下载'); }
+    else { delete S.pending[it.id]; unsubscribed.add(it.id); toast('已' + (to ? '从' + to : '') + '取消订阅'); }
     save();
-  } catch (e) { toast((on ? '订阅' : '取消订阅') + '失败：' + errText(e)); }
+  } catch (e) {
+    // say which account failed and why (the host translates Steam's result code); stays on screen longer
+    const s = me.sub || {};
+    const who = s.loggedIn ? `（订阅账号「${s.name || s.steamid}」）` : '';
+    const hint = s.loggedIn && [0, 15, 21, 401, 403].includes(e.status) ? '。可以在右上角的账号菜单里退出订阅账号再重新登录' : '';
+    toast((on ? '订阅' : '取消订阅') + '失败' + who + '：' + ((e && e.message) || e) + hint, 8000);
+  }
   refreshTile(it.id);
   if (selected === it.id) { const box = $('.dv .actions'); if (box) renderActions(box, it); }
 }
@@ -1018,6 +1095,10 @@ function applyTheme(theme, accent) {
   };
   // a click outside the floating filter panel closes it
   document.addEventListener('click', e => { if (body.classList.contains('overlay') && !e.target.closest('#filters')) body.classList.remove('overlay'); });
+  document.addEventListener('click', e => {
+    if (e.target.closest('[data-acc]')) { e.stopPropagation(); toggleAccounts(true); return; }
+    if (!e.target.closest('#accounts, #me')) toggleAccounts(false);
+  });
   syncFilters();
   renderFilters(); renderSort();
   await refreshInstalled(); setInterval(refreshInstalled, 30000);
