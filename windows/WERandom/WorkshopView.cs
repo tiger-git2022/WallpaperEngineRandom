@@ -317,6 +317,29 @@ public sealed class WorkshopView : Grid
 		case "subLogout":
 			await Sub(_engine).LogoutAsync(SubCore);
 			return await StatusJson(steam);
+		case "subs":
+		{
+			// 订阅用的账号（订阅账号，没登录时是浏览账号）在 Steam 上的订阅列表的一页
+			SteamWorkshop who = Subscriber;
+			SteamWorkshop.SubsPage p = await who.SubscriptionsAsync(Math.Max(1, args.Int("page", 1)));
+			var o = new JObj();
+			o["owner"] = who.SteamId;
+			o["total"] = p.Total;
+			o["ids"] = p.Ids;
+			return Json.Write(o, pretty: false);
+		}
+		case "subCheck":
+		{
+			SteamWorkshop who = Subscriber;
+			bool? on = await who.SubscribedOnPageAsync(args.Str("id"));
+			var o = new JObj();
+			o["owner"] = who.SteamId;
+			o["on"] = on.HasValue ? (object)on.Value : null;
+			return Json.Write(o, pretty: false);
+		}
+		case "subsLog":
+			_engine.Log.Log("创意工坊：" + args.Str("message"));
+			return "true";
 		case "subFollowing":
 			return Json.Write(await Sub(_engine).FollowingAsync(), pretty: false);
 		case "query":
