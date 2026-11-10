@@ -40,6 +40,9 @@ class Store(private val file: File, private val scope: CoroutineScope) {
     var mergePosts by mutableStateOf(false)
     var glass by mutableStateOf(true)
 
+    /** 作者页「只看没订阅的」。 */
+    var unsubscribedOnly by mutableStateOf(false)
+
     /** 从 Steam 读到的订阅列表（[remoteSubsOwner] 这个账号的），读取时间 [remoteSubsTime]（毫秒）。 */
     val remoteSubs = mutableStateMapOf<String, Boolean>()
     var remoteSubsOwner by mutableStateOf("")
@@ -84,6 +87,7 @@ class Store(private val file: File, private val scope: CoroutineScope) {
             tab = o.optString("tab").takeIf { it in listOf("timeline", "browse", "following") } ?: "timeline"
             mergePosts = o.optBoolean("mergePosts")
             glass = o.optBoolean("glass", true)
+            unsubscribedOnly = o.optBoolean("unsubscribedOnly")
             subAccount = o.optBoolean("subAccount")
             o.optJSONArray("remoteSubs")?.let { a -> a.strings().forEach { remoteSubs[it] = true } }
             remoteSubsOwner = o.optString("remoteSubsOwner")
@@ -123,6 +127,7 @@ class Store(private val file: File, private val scope: CoroutineScope) {
         o.put("tab", tab)
         o.put("mergePosts", mergePosts)
         o.put("glass", glass)
+        o.put("unsubscribedOnly", unsubscribedOnly)
         o.put("subAccount", subAccount)
         o.put("remoteSubs", JSONArray(remoteSubs.keys.toList()))
         o.put("remoteSubsOwner", remoteSubsOwner)

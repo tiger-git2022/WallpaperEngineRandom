@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -54,9 +55,11 @@ import androidx.compose.ui.unit.sp
 
 /** 浏览 / 搜索页和作者页用的网格。 */
 @Composable
-private fun ItemGrid(v: ListView, header: @Composable () -> Unit, filter: Boolean) {
+private fun ItemGrid(v: ListView, header: @Composable () -> Unit, filter: Boolean, unsubscribedOnly: Boolean = false) {
     val pad = LocalContentPadding.current
-    val shown = v.ids.mapNotNull { ws.items[it] }.filter { !filter || ws.store.passesFilters(it) }
+    val shown = v.ids.mapNotNull { ws.items[it] }.filter { (!filter || ws.store.passesFilters(it)) && (!unsubscribedOnly || !ws.isSubscribed(it.id)) }
+    // 打开详情后可以左右滑动，按页面上的顺序切换
+    val ids = shown.map { it.id }
     LaunchedEffect(v) {
         snapshotFlow {
             val info = v.grid.layoutInfo
@@ -76,7 +79,7 @@ private fun ItemGrid(v: ListView, header: @Composable () -> Unit, filter: Boolea
             if (!v.loading && v.error == null && v.done && shown.isEmpty()) {
                 full("empty") { EmptyState(if (v.ids.isNotEmpty()) "筛选条件下没有作品" else "没有找到壁纸", if (v.ids.isNotEmpty()) "试试清除筛选。" else "换个关键词或筛选条件试试。") }
             }
-            items(shown, key = { it.id }) { Tile(it, v) }
+            items(shown, key = { it.id }) { Tile(it, v, ids) }
             full("more") { MoreFooter(v) }
         }
     }
@@ -87,8 +90,8 @@ private fun LazyGridScope.full(key: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun Tile(it: Item, v: ListView) {
-    Column(Modifier.clip(RoundedCornerShape(14.dp)).clickable { ws.openDetail(it.id) }) {
+private fun Tile(it: Item, v: ListView, ids: List<String>) {
+    Column(Modifier.clip(RoundedCornerShape(14.dp)).clickable { ws.openDetail(it.id, ids) }) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceVariant)) {
             PreviewImage(it.preview, animate = false, modifier = Modifier.fillMaxSize())
             TileBadges(it, timeline = false)
@@ -150,12 +153,17 @@ private fun FilterChipButton(onFilter: () -> Unit) {
 fun AuthorPage(s: AuthorScreen, onFilter: () -> Unit) {
     val v = s.view
     ItemGrid(v, header = {
-        Row(Modifier.padding(horizontal = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        // 字大时一行放不下：自动换行
+        androidx.compose.foundation.layout.FlowRow(
+            Modifier.padding(horizontal = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
+            itemVerticalAlignment = Alignment.CenterVertically,
+        ) {
             FollowButton(s.steamId)
-            Spacer(Modifier.weight(1f))
+            val only = ws.store.unsubscribedOnly
+            Pill("只看没订阅的", onClick = { ws.store.unsubscribedOnly = !only; ws.store.save() }, selected = only, leading = if (only) Icons.Default.Check else null)
             FilterChipButton(onFilter)
         }
-    }, filter = true)
+    }, filter = true, unsubscribedOnly = ws.store.unsubscribedOnly)
 }
 
 /** 关注的作者。 */
