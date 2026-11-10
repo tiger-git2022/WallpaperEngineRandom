@@ -280,9 +280,14 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .dg .gh .grow { flex: 1; }
 .dg .gh a { color: var(--fg3); font-size: 12px; }
 .dgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
-.dt { border-radius: 6px; padding: 6px; margin: -6px; }
+/* tiles of a group are equally tall (grid rows stretch); the space a shorter name leaves goes between the name and the
+   details, so details, badges and buttons line up at the bottom */
+.dt { border-radius: 6px; padding: 6px; margin: -6px; display: flex; flex-direction: column; }
+.dt .t + .s { margin-top: auto; padding-top: 4px; }
 .dt:hover { background: var(--hover); }
-.dt .thumb img { object-fit: contain; cursor: zoom-in; }
+.dt { cursor: pointer; }
+.dt.sel { background: var(--hover); outline: 2px solid var(--accent); }
+.dt .thumb img { object-fit: contain; }
 .dt .t { margin-top: 6px; font-weight: 600; white-space: normal; overflow-wrap: anywhere; line-height: 1.35; }
 .dt .acts button.mark { flex: 1; }
 
@@ -1444,16 +1449,21 @@ async function scanDupes() {
   loadDupeDetails();
 }
 // Steam details (title of device-only ones, author, publish date) for the wallpapers in the groups
+// only for the groups on screen (renderDupes calls this each time: more groups shown, slider moved); each batch of
+// 100 is drawn as soon as it arrives, so authors and dates fill in instead of staying empty until all are read
+const dupeAsked = new Set();
 async function loadDupeDetails() {
-  const ids = [...new Set(dupe.groups.flat().map(x => x.id))].filter(id => !items.has(id));
+  const shown = dupe.groups.slice(0, dupe.shown).flat();
+  ensureProfiles([...new Set(shown.map(x => (items.get(x.id) || {}).creator).filter(Boolean))]);
+  const ids = [...new Set(shown.map(x => x.id))].filter(id => !items.has(id) && !dupeAsked.has(id));
+  ids.forEach(id => dupeAsked.add(id));
   for (let i = 0; i < ids.length; i += 100) {
     try {
       const r = await host.call('details', { ids: ids.slice(i, i + 100) });
       for (const f of (r.response || {}).publishedfiledetails || []) if (+f.result === 1) remember(f);
-    } catch (e) { }
+    } catch (e) { ids.slice(i, i + 100).forEach(id => dupeAsked.delete(id)); }
+    if (S.tab === 'dupes' && !current) renderDupes(true);
   }
-  ensureProfiles([...new Set(dupe.groups.flat().map(x => (items.get(x.id) || {}).creator).filter(Boolean))]);
-  if (S.tab === 'dupes' && !current) renderDupes(true);
 }
 // a PC wallpaper that is gone from this PC (unsubscribed, Steam deleted the folder) and from the devices drops out
 function dupeAlive(it) {
@@ -1521,6 +1531,7 @@ function renderDupes(keepScroll) {
   $('#donly').onchange = e => { c.onlyDevice = e.target.checked; save(); dupe.shown = 20; renderDupes(); };
   $('#daddr').onchange = e => { c.addrs = e.target.value.split(/[,，\s]+/).map(x => x.trim()).filter(Boolean); save(); };
   if (keepScroll) main.scrollTop = top;
+  if (dupe.data) loadDupeDetails();
 }
 function groupDupeHtml(g, gi) {
   return `<div class="dg" data-g="${gi}"><div class="gh"><span>${g.length} 个相似，最像的两个 ${Math.round(g.score / 10)}%，不要的点「取消这个」</span><span class="grow"></span><a data-dnot="${gi}" title="这一组以后不再提示">这组不是重复</a></div>
@@ -1585,7 +1596,7 @@ document.addEventListener('click', async e => {
   if (t.closest('[data-dscan]')) { scanDupes(); return; }
   if (t.closest('[data-ddev]')) { const b = t.closest('[data-ddev]'); b.disabled = true; b.innerHTML = '<span class="spin"></span>'; await loadDevices(); renderDupes(true); return; }
   if (t.closest('[data-dmore]')) { dupe.shown += 20; renderDupes(true); return; }
-  const z = t.closest('[data-dzoom]'); if (z) { lightbox(z.src); return; }
+
   const ap = t.closest('[data-dapply]');
   if (ap) {
     const id = ap.dataset.dapply; ap.disabled = true; ap.innerHTML = '<span class="spin"></span>';
@@ -1603,8 +1614,12 @@ document.addEventListener('click', async e => {
   const un = t.closest('[data-dunsend]'); if (un) { const [model, id] = un.dataset.dunsend.split('|'); const c = dcfg(); c.send[model] = (c.send[model] || []).filter(x => x !== id); if (!c.send[model].length) delete c.send[model]; save(); renderDupes(true); return; }
   const cp = t.closest('[data-dcopy]');
   if (cp) { const ids = dcfg().send[cp.dataset.dcopy] || []; const text = ids.map(id => (items.get(id) || {}).title || id).join('\n'); try { await navigator.clipboard.writeText(text); toast('已复制 ' + ids.length + ' 个标题'); } catch (err) { toast('复制失败'); } return; }
-  const w = t.closest('.dt [data-works]'); if (w) { openAuthor(w.dataset.works); }
+  const w = t.closest('.dt [data-works]'); if (w) { openAuthor(w.dataset.works); return; }
+  // clicking a tile anywhere else: its details (again: close), like the other lists
+  const tile = t.closest('.dt[data-id]');
+  if (tile && !t.closest('button, a, input')) { if (selected === tile.dataset.id) closeDetail(); else select(tile.dataset.id); }
 });
+
 
 // ---------- installed / pending ----------
 async function refreshInstalled() {
