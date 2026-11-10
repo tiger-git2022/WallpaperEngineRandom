@@ -10,7 +10,13 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 
@@ -34,6 +40,19 @@ fun WorkshopTheme(content: @Composable () -> Unit) {
 /** 深色主题（按实际的底色判断）。 */
 @Composable
 fun isDark() = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+
+/**
+ * 列表里的卡片底色。深色主题下卡片和页面底色几乎一样，所以提亮一档并加一圈淡白边（和按钮一样：深色有边、浅色没边）。
+ */
+@Composable
+fun Modifier.card(shape: Shape): Modifier {
+    val scheme = MaterialTheme.colorScheme
+    return if (isDark()) {
+        clip(shape).background(scheme.surfaceContainerHigh).border(1.dp, Color.White.copy(alpha = 0.14f), shape)
+    } else {
+        clip(shape).background(scheme.surfaceContainerLow)
+    }
+}
 
 /** 状态颜色（和电脑版一样：NEW 橙色，已订阅绿色，等待黄色）。 */
 object Tones {
