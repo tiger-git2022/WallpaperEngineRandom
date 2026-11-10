@@ -436,14 +436,20 @@ class RefreshHost {
 
 val LocalRefreshHost = staticCompositionLocalOf { RefreshHost() }
 
+/** 主界面左右滑动时相邻的页面也在画：只有正对着的那页去控制下拉刷新的那滴玻璃。 */
+val LocalPageActive = androidx.compose.runtime.compositionLocalOf { true }
+
 /** 可以下拉刷新的列表：在顶部继续往下拉，松手后 [onRefresh]。 */
 @Composable
 fun Refreshable(refreshing: Boolean, onRefresh: () -> Unit, content: @Composable () -> Unit) {
     val state = rememberPullToRefreshState()
     val host = LocalRefreshHost.current
+    val active = LocalPageActive.current
     SideEffect {
-        host.state = state
-        host.refreshing = refreshing
+        if (active) {
+            host.state = state
+            host.refreshing = refreshing
+        }
     }
     DisposableEffect(host, state) {
         onDispose { if (host.state === state) host.state = null }

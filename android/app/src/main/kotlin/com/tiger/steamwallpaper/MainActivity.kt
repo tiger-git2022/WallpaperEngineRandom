@@ -1,5 +1,7 @@
 package com.tiger.steamwallpaper
 
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.LaunchedEffect
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -153,19 +155,18 @@ fun WorkshopApp(activity: MainActivity) {
             // 页面内容：录下来给浮动的玻璃折射。页面里的部件不能折射它自己，所以里面没有玻璃
             CompositionLocalProvider(LocalPageBackdrop provides null) {
                 Box(Modifier.fillMaxSize().glassContent(backdrop)) {
-                    // 目标是作者页对象或标签页的名字：切换动画里旧页面按自己的目标画，不会跟着变成新页面
-                    val target: Any = ws.stack.lastOrNull() ?: ws.store.tab
+                    // 作者页盖在标签页上面；标签页之间左右滑动切换
+                    val target: Any = ws.stack.lastOrNull() ?: "tabs"
                     AnimatedContent(targetState = target, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "page") { page ->
-                        when (page) {
-                            is AuthorScreen -> AuthorPage(page) { filterOpen = true }
-                            "browse" -> BrowsePage(
+                        if (page is AuthorScreen) {
+                            AuthorPage(page) { filterOpen = true }
+                        } else {
+                            TabPages(
                                 onSort = { anchor ->
                                     menu = MenuRequest(anchor, SORTS.map { it.key to it.title }, ws.store.sort) { ws.setSort(it) }
                                 },
                                 onFilter = { filterOpen = true },
                             )
-                            "following" -> FollowingPage()
-                            else -> TimelinePage()
                         }
                     }
                 }
@@ -284,6 +285,36 @@ private fun GlassCircle(onClick: () -> Unit, content: @Composable () -> Unit) {
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) { content() }
+}
+
+/** 三个标签页：左右滑动切换；点底部标签栏时也滑过去。 */
+@Composable
+private fun TabPages(onSort: (Rect) -> Unit, onFilter: () -> Unit) {
+    val keys = TABS.map { it.key }
+    val pager = androidx.compose.foundation.pager.rememberPagerState(initialPage = keys.indexOf(ws.store.tab).coerceAtLeast(0)) { keys.size }
+    // 点标签栏：滑到那一页
+    LaunchedEffect(pager) {
+        snapshotFlow { ws.store.tab }.collect { t ->
+            val i = keys.indexOf(t)
+            if (i >= 0 && i != pager.targetPage) pager.animateScrollToPage(i)
+        }
+    }
+    // 滑到一页停下：就是切到那个标签
+    LaunchedEffect(pager) {
+        snapshotFlow { pager.settledPage }.collect { p ->
+            val t = keys[p]
+            if (t != ws.store.tab && !pager.isScrollInProgress) ws.openTab(t)
+        }
+    }
+    androidx.compose.foundation.pager.HorizontalPager(pager, modifier = Modifier.fillMaxSize(), key = { keys[it] }) { p ->
+        CompositionLocalProvider(LocalPageActive provides (p == pager.currentPage)) {
+            when (keys[p]) {
+                "browse" -> BrowsePage(onSort, onFilter)
+                "following" -> FollowingPage()
+                else -> TimelinePage()
+            }
+        }
+    }
 }
 
 private class TabItem(val key: String, val title: String, val icon: ImageVector)

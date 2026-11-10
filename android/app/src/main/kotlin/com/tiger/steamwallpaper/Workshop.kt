@@ -602,8 +602,31 @@ class Workshop(val steam: Steam, val sub: Steam, val store: Store, private val s
 
     // ---- details ----
 
-    fun openDetail(id: String, list: List<String> = listOf(id)) {
+    /** 详情是从哪个列表（作者页 / 浏览工坊）打开的：滑到最后时接着加载它的下一页。 */
+    var detailSource: ListView? = null
+        private set
+
+    /** 每次从页面上打开详情加一（详情里左右滑动切换不算）：面板按它重建翻页。 */
+    var detailSession by mutableStateOf(0)
+        private set
+
+    fun openDetail(id: String, list: List<String> = listOf(id), source: ListView? = null) {
         detailList = if (id in list) list else listOf(id)
+        detailSource = source
+        detailSession++
+        showDetail(id)
+    }
+
+    /** 列表加载了下一页：把新的作品接到详情的末尾（已有的不动，翻到的位置不变）。 */
+    fun extendDetail(source: ListView, ids: List<String>) {
+        if (detail == null || detailSource !== source) return
+        val have = detailList.toHashSet()
+        val add = ids.filter { it !in have }
+        if (add.isNotEmpty()) detailList = detailList + add
+    }
+
+    /** 详情里左右滑到另一个作品。 */
+    fun showDetail(id: String) {
         detail = id
         checkSubscribed(id)
         if (timeline?.ids?.contains(id) == true) markSeen(id)
