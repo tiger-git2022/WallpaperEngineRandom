@@ -12,6 +12,8 @@ val changelogVersion: String = run {
     Regex("""^## \[(\d+\.\d+\.\d+)]""").find(line ?: "")?.groupValues?.get(1) ?: "0.0.1"
 }
 val appVersion = (findProperty("appVersion") as String?) ?: changelogVersion
+// 测试包（-PtestBuild=true，上传到预发布 android-test）：记下编译时间，应用内更新据此判断 android-test 里的是不是更新的
+val testBuild = (findProperty("testBuild") as String?) == "true"
 val appCode = appVersion.split('.').map { it.takeWhile(Char::isDigit).toIntOrNull() ?: 0 }.let { it[0] * 10000 + it[1] * 100 + it[2] }
 
 // 发布签名：CI 用环境变量 WER_KEYSTORE（.jks 路径）和 WER_KEYSTORE_PASSWORD；本机读仓库外的
@@ -30,7 +32,7 @@ val signing: Pair<File, String>? = run {
 }
 
 android {
-    namespace = "com.werandom.workshop"
+    namespace = "com.tiger.steamwallpaper"
     compileSdk {
         version = release(37) {
             minorApiLevel = 2
@@ -39,12 +41,14 @@ android {
     buildToolsVersion = "37.0.0"
 
     defaultConfig {
-        applicationId = "com.werandom.workshop"
+        applicationId = "com.tiger.steamwallpaper"
         minSdk = 26
         targetSdk = 36
         versionCode = appCode
         versionName = appVersion
         buildConfigField("String", "REPO", "\"tiger-git2022/WallpaperEngineRandom\"")
+        buildConfigField("boolean", "TEST_BUILD", testBuild.toString())
+        buildConfigField("long", "BUILD_TIME", (if (testBuild) System.currentTimeMillis() else 0L).toString() + "L")
     }
 
     signingConfigs {

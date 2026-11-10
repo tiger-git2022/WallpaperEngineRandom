@@ -1,4 +1,4 @@
-package com.werandom.workshop
+package com.tiger.steamwallpaper
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -63,20 +63,22 @@ private fun ItemGrid(v: ListView, header: @Composable () -> Unit, filter: Boolea
             (info.visibleItemsInfo.lastOrNull()?.index ?: 0) >= info.totalItemsCount - 6
         }.collect { near -> if (near && !v.loading && !v.done && v.error == null && v.ids.isNotEmpty()) ws.loadMore(v) }
     }
-    LazyVerticalGrid(
-        columns = GridCells.Adaptive(150.dp),
-        state = v.grid,
-        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = pad.calculateTopPadding(), bottom = pad.calculateBottomPadding()),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-        modifier = Modifier.fillMaxSize(),
-    ) {
-        full("head") { header() }
-        if (!v.loading && v.error == null && v.done && shown.isEmpty()) {
-            full("empty") { EmptyState(if (v.ids.isNotEmpty()) "筛选条件下没有作品" else "没有找到壁纸", if (v.ids.isNotEmpty()) "试试清除筛选。" else "换个关键词或筛选条件试试。") }
+    Refreshable(refreshing = v.refreshing != null, onRefresh = { ws.refresh(v) }) {
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(150.dp),
+            state = v.grid,
+            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = pad.calculateTopPadding(), bottom = pad.calculateBottomPadding()),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            full("head") { header() }
+            if (!v.loading && v.error == null && v.done && shown.isEmpty()) {
+                full("empty") { EmptyState(if (v.ids.isNotEmpty()) "筛选条件下没有作品" else "没有找到壁纸", if (v.ids.isNotEmpty()) "试试清除筛选。" else "换个关键词或筛选条件试试。") }
+            }
+            items(shown, key = { it.id }) { Tile(it, v) }
+            full("more") { MoreFooter(v) }
         }
-        items(shown, key = { it.id }) { Tile(it, v) }
-        full("more") { MoreFooter(v) }
     }
 }
 
@@ -88,7 +90,7 @@ private fun LazyGridScope.full(key: String, content: @Composable () -> Unit) {
 private fun Tile(it: Item, v: ListView) {
     Column(Modifier.clip(RoundedCornerShape(14.dp)).clickable { ws.openDetail(it.id) }) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceVariant)) {
-            PreviewImage(it.preview, 480, animate = false, modifier = Modifier.fillMaxSize())
+            PreviewImage(it.preview, animate = false, modifier = Modifier.fillMaxSize())
             TileBadges(it, timeline = false)
         }
         Text(it.title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 2.dp, top = 6.dp))
@@ -116,7 +118,7 @@ fun BrowsePage(onSort: (Rect) -> Unit, onFilter: () -> Unit) {
                 )
                 if (v.search.isNotEmpty()) TextButton(onClick = { ws.clearSearch() }) { Text("清除搜索") }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SortChip(onSort)
                 FilterChipButton(onFilter)
             }
@@ -130,11 +132,9 @@ private fun SortChip(onSort: (Rect) -> Unit) {
     var key = ws.store.sort
     if (key == "text" && ws.search.isEmpty()) key = "trend7"
     val title = SORTS.firstOrNull { it.key == key }?.title ?: ""
-    AssistChip(
-        onClick = { onSort(anchor) },
-        label = { Text(title) },
-        leadingIcon = { Icon(Icons.AutoMirrored.Filled.Sort, null, Modifier.size(AssistChipDefaults.IconSize)) },
-        trailingIcon = { Icon(Icons.Default.ArrowDropDown, null, Modifier.size(AssistChipDefaults.IconSize)) },
+    Pill(
+        title, onClick = { onSort(anchor) },
+        leading = Icons.AutoMirrored.Filled.Sort, trailing = Icons.Default.ArrowDropDown,
         modifier = Modifier.onGloballyPositioned { anchor = it.boundsInRoot() },
     )
 }
@@ -142,34 +142,18 @@ private fun SortChip(onSort: (Rect) -> Unit) {
 @Composable
 private fun FilterChipButton(onFilter: () -> Unit) {
     val n = ws.store.filterCount
-    AssistChip(
-        onClick = onFilter,
-        label = { Text(if (n > 0) "筛选（$n）" else "筛选") },
-        leadingIcon = { Icon(Icons.Default.FilterList, null, Modifier.size(AssistChipDefaults.IconSize)) },
-        colors = if (n > 0) AssistChipDefaults.assistChipColors(containerColor = glassSelectedColor(), labelColor = MaterialTheme.colorScheme.primary) else AssistChipDefaults.assistChipColors(),
-    )
+    Pill(if (n > 0) "筛选（$n）" else "筛选", onClick = onFilter, selected = n > 0, leading = Icons.Default.FilterList)
 }
 
-/** 作者页：作者上传的全部壁纸（筛选在本地做）。 */
+/** 作者页：作者上传的全部壁纸（筛选在本地做）。名字、头像和作品数在顶栏。 */
 @Composable
 fun AuthorPage(s: AuthorScreen, onFilter: () -> Unit) {
-    val context = LocalContext.current
     val v = s.view
     ItemGrid(v, header = {
-        Column(Modifier.padding(horizontal = 2.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Avatar(authorAvatar(s.steamId), 64.dp, shape = RoundedCornerShape(16.dp))
-                Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                    Text(ws.store.profiles[s.steamId]?.name?.ifEmpty { null } ?: s.steamId, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Text(v.total?.let { "$it 个 Wallpaper Engine 作品" } ?: "正在读取作品…", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
-                }
-            }
-            Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                FollowButton(s.steamId)
-                OutlinedButton(onClick = { openUrl(context, "https://steamcommunity.com/profiles/${s.steamId}/myworkshopfiles/?appid=431960") }, modifier = Modifier.padding(0.dp)) { Text("网页") }
-                Spacer(Modifier.weight(1f))
-                FilterChipButton(onFilter)
-            }
+        Row(Modifier.padding(horizontal = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            FollowButton(s.steamId)
+            Spacer(Modifier.weight(1f))
+            FilterChipButton(onFilter)
         }
     }, filter = true)
 }
@@ -184,18 +168,17 @@ fun FollowingPage() {
     val pad = LocalContentPadding.current
     // 取消关注后先留在列表里（按钮变成「+ 关注」），点错了还能关注回来；刷新后才去掉
     val list = remember(ws.followsLoading, ws.store.follows.size == 0) { ws.store.follows.toList() }
+    Refreshable(refreshing = ws.followsLoading, onRefresh = { ws.loadFollows() }) {
     LazyColumn(
+        state = ws.followingList,
         contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = pad.calculateTopPadding(), bottom = pad.calculateBottomPadding()),
         verticalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
         item("head") {
-            Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("关注的作者", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text("你在 Steam 上关注的 ${list.size} 位玩家 / 作者，点一个查看 TA 上传的全部壁纸", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                TextButton(onClick = { ws.loadFollows() }, enabled = !ws.followsLoading) { Text(if (ws.followsLoading) "正在读取…" else "刷新") }
+            Column(Modifier.padding(horizontal = 4.dp)) {
+                Text("关注的作者（${list.size}）", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text("点一个查看 TA 上传的全部壁纸，下拉刷新", fontSize = 13.sp)
             }
         }
         if (list.isEmpty() && !ws.followsLoading) {
@@ -216,5 +199,6 @@ fun FollowingPage() {
                 FollowButton(id)
             }
         }
+    }
     }
 }

@@ -1,4 +1,4 @@
-package com.werandom.workshop
+package com.tiger.steamwallpaper
 
 import android.os.Build
 import androidx.compose.foundation.background
@@ -85,17 +85,14 @@ private val DarkSheetEdge = Highlight(width = 1.5.dp, blurRadius = 1.dp, style =
 private val SheetShadow = Shadow(radius = 20.dp, offset = DpOffset(0.dp, 2.dp), color = Color.Black.copy(alpha = 0.3f))
 private val TileShadow = Shadow(radius = 12.dp, offset = DpOffset(0.dp, 1.dp), color = Color.Black.copy(alpha = 0.1f))
 
-/** 面板的模糊（dp）和边缘色散的宽度（dp），和 EhViewer 分支的默认设置一样。 */
-private const val SHEET_BLUR = 2.5f
-private const val SHEET_FRINGE = 6f
-
+// 底色的颜色（不含透明度）。透明度、模糊和边缘色差都按设置（账号面板 → 液态玻璃），所有玻璃一样。
 const val GLASS_BAR_TINT = 0.2f
 const val GLASS_CONTROL_TINT = 0.25f
 const val GLASS_SHEET_TINT = 0.4f
 const val GLASS_TILE_TINT = 0.3f
 
 /**
- * [shape] 的液态玻璃，[tint] 是盖在玻璃上的底色（保证上面的文字看得清）。没有液态玻璃时画成普通的半透明底色。
+ * [shape] 的液态玻璃，[tint] 是盖在玻璃上的底色（保证上面的文字看得清；透明度按设置）。没有液态玻璃时画成普通的半透明底色。
  * 折射只支持圆角矩形（CornerBasedShape），别的形状在安卓 13 以上会抛异常。
  */
 @Composable
@@ -108,9 +105,12 @@ fun Modifier.glass(shape: Shape, tint: Color, style: GlassStyle = GlassStyle.Con
         return (if (style == GlassStyle.Backdrop) this else shadow(if (style == GlassStyle.Sheet) 12.dp else 4.dp, shape, clip = false))
             .background(solid, shape)
     }
+    val store = ws.store
+    val blurDp = store.glassBlur / 10f
+    val fringe = store.glassFringe / 100f
     // 安卓 12 以前没有模糊，底色要更不透明才看得清
-    val boost = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) 0.75f else 0f
-    val alpha = (tint.alpha + boost).coerceAtMost(0.95f)
+    val boost = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) 0.5f else 0f
+    val alpha = (store.glassTint / 100f + boost).coerceIn(0f, 0.95f)
     val surface = if (dark) tint.copy(alpha = alpha) else Color.White.copy(alpha = alpha)
     val edge = when {
         !dark || style == GlassStyle.Backdrop -> null
@@ -129,27 +129,21 @@ fun Modifier.glass(shape: Shape, tint: Color, style: GlassStyle = GlassStyle.Con
         shape = { shape },
         effects = {
             if (style != GlassStyle.Tile) vibrancy()
+            if (style != GlassStyle.Tile && blurDp > 0f) blur(blurDp.dp.toPx())
+            // 边缘的弯曲按部件大小；色差统一用 edgeFringe，强度按设置
+            val band = minOf(24f.dp.toPx(), size.minDimension * 0.4f)
             when (style) {
                 // 只有边缘弯曲：太深的折射会把搜索栏下面的文字拉长
-                GlassStyle.Control -> {
-                    blur(1.5f.dp.toPx())
-                    lens(12f.dp.toPx(), 20f.dp.toPx(), chromaticAberration = true)
-                }
-                GlassStyle.Panel -> {
-                    blur(4f.dp.toPx())
-                    lens(16f.dp.toPx(), 28f.dp.toPx(), chromaticAberration = true)
-                }
-                GlassStyle.Sheet -> {
-                    blur(SHEET_BLUR.dp.toPx())
-                    lens(25f.dp.toPx(), 10f.dp.toPx())
-                    edgeFringe(24f.dp.toPx(), SHEET_FRINGE.dp.toPx())
-                }
-                GlassStyle.Backdrop -> blur(SHEET_BLUR.dp.toPx())
+                GlassStyle.Control -> lens(12f.dp.toPx(), 20f.dp.toPx())
+                GlassStyle.Panel -> lens(16f.dp.toPx(), 28f.dp.toPx())
+                GlassStyle.Sheet -> lens(25f.dp.toPx(), 10f.dp.toPx())
+                GlassStyle.Backdrop -> {}
                 GlassStyle.Tile -> {
                     val height = minOf(16f.dp.toPx(), size.minDimension * 0.3f)
-                    lens(height, height * 1.4f, chromaticAberration = true)
+                    lens(height, height * 1.4f)
                 }
             }
+            if (style != GlassStyle.Backdrop) edgeFringe(band, fringe * 12f.dp.toPx())
         },
         highlight = edge?.let { { it } },
         shadow = shadow?.let { { it } },
@@ -158,8 +152,8 @@ fun Modifier.glass(shape: Shape, tint: Color, style: GlassStyle = GlassStyle.Con
 }
 
 /**
- * 贴着屏幕底边的面板（详情、筛选）：只露出上边。玻璃向左、右、下伸出屏幕外 [GLASS_BLEED]，那几条边的亮边、阴影和弯曲
- * 都在屏幕外，面板在那里和屏幕融成一体（EhViewer 分支的 edgeGlass）。
+ * 贴着屏幕底边的面板（详情、筛选）：只露出上边和上边的两个圆角。玻璃向下伸出屏幕外 [GLASS_BLEED]，下边的亮边、阴影和
+ * 弯曲都在屏幕外，面板在那里和屏幕融成一体（EhViewer 分支的 edgeGlass，带圆角时只有对面那条边伸出去）。
  */
 @Composable
 fun Modifier.bottomSheetGlass(tint: Color, corner: androidx.compose.ui.unit.Dp): Modifier {
@@ -167,11 +161,11 @@ fun Modifier.bottomSheetGlass(tint: Color, corner: androidx.compose.ui.unit.Dp):
     var bleed = 0
     return layout { measurable, constraints ->
         bleed = GLASS_BLEED.roundToPx()
-        val placeable = measurable.measure(constraints.offset(bleed * 2, bleed))
-        layout(placeable.width - bleed * 2, placeable.height - bleed) { placeable.place(-bleed, 0) }
+        val placeable = measurable.measure(constraints.offset(0, bleed))
+        layout(placeable.width, placeable.height - bleed) { placeable.place(0, 0) }
     }.glass(shape, tint, GlassStyle.Sheet).layout { measurable, constraints ->
-        val placeable = measurable.measure(constraints.offset(-bleed * 2, -bleed))
-        layout(placeable.width + bleed * 2, placeable.height + bleed) { placeable.place(bleed, 0) }
+        val placeable = measurable.measure(constraints.offset(0, -bleed))
+        layout(placeable.width, placeable.height + bleed) { placeable.place(0, 0) }
     }
 }
 

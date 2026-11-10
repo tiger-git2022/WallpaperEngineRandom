@@ -1,4 +1,4 @@
-package com.werandom.workshop
+package com.tiger.steamwallpaper
 
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.LazyGridState
@@ -34,13 +34,32 @@ class ListView(val kind: Kind, val search: String = "", val author: String = "",
     /** 换标签页再回来时保持滚动位置。 */
     val list = LazyListState()
     val grid = LazyGridState()
+
+    /** 下拉刷新时在后台加载的新列表（加载完换上来，加载期间旧列表照常显示）。 */
+    var refreshing by mutableStateOf<ListView?>(null)
+    var replaces: ListView? = null
+
+    /** 时间线：第一次加载完（读到已读边界）后滚到上次看到的位置，只做一次。 */
+    var settled by mutableStateOf(false)
+    var restored = false
+
+    fun fresh() = ListView(kind, search, author, sortKey)
+}
+
+/** 一个壁纸已经读到的评论。 */
+class Comments {
+    val list = mutableStateListOf<Steam.Comment>()
+    var total by mutableStateOf(0)
+    var loading by mutableStateOf(false)
+    var done by mutableStateOf(false)
+    var error by mutableStateOf<String?>(null)
 }
 
 data class Me(val loggedIn: Boolean = false, val steamId: String = "", val name: String = "", val avatar: String = "")
 
 /** 作者页（从标签页或别的作者页打开，返回键回到上一层）。 */
 class AuthorScreen(val steamId: String) {
-    val view = ListView(Kind.Author, author = steamId)
+    var view by mutableStateOf(ListView(Kind.Author, author = steamId))
 }
 
 /**
@@ -78,6 +97,9 @@ class Workshop(val steam: Steam, val store: Store, private val scope: CoroutineS
 
     var followsLoading by mutableStateOf(false)
         private set
+
+    /** 关注的作者列表的滚动位置。 */
+    val followingList = LazyListState()
 
     var toast by mutableStateOf<Pair<String, Long>?>(null)
         private set
@@ -159,6 +181,30 @@ class Workshop(val steam: Steam, val store: Store, private val scope: CoroutineS
     fun refreshTimeline() {
         timeline = null
         timelineView()
+    }
+
+    /** 下拉刷新（或在顶部再点一次标签）：在后台重新加载第一页，加载完换掉旧列表。 */
+    fun refresh(v: ListView) {
+        if (v.refreshing != null) return
+        val n = v.fresh()
+        n.replaces = v
+        // 刷新后停在最上面，不再跳回上次看到的位置
+        n.restored = true
+        v.refreshing = n
+        loadMore(n)
+    }
+
+    private fun swapIn(n: ListView) {
+        val old = n.replaces ?: return
+        n.replaces = null
+        old.refreshing = null
+        if (n.error != null && n.ids.isEmpty()) {
+            toast("刷新失败：${n.error}")
+            return
+        }
+        if (timeline === old) timeline = n
+        if (browse === old) browse = n
+        stack.firstOrNull { it.view === old }?.view = n
     }
 
     fun submitSearch() {
@@ -375,6 +421,7 @@ class Workshop(val steam: Steam, val store: Store, private val scope: CoroutineS
             }
             v.loading = false
             ensureProfiles(v.ids.mapNotNull { items[it]?.creator }.toSet())
+            if (v.replaces != null) swapIn(v)
             if (v.kind == Kind.Timeline && v === timeline) afterTimelineLoad(v)
         }
     }
@@ -393,6 +440,7 @@ class Workshop(val steam: Steam, val store: Store, private val scope: CoroutineS
             unread = 0
             return
         }
+        v.settled = true
         if (store.readUpTo == 0L) {
             store.readUpTo = items[v.ids[0]]?.created ?: 0
             store.save()
@@ -401,6 +449,7 @@ class Workshop(val steam: Steam, val store: Store, private val scope: CoroutineS
         // 一直加载到旧边界出现在列表里，未读数才准（最多大约 600 条）
         val last = items[v.ids.last()]
         if (!v.done && v.error == null && last != null && last.created > store.readUpTo && v.ids.size < 600) {
+            v.settled = false
             loadMore(v)
             return
         }
@@ -441,9 +490,10 @@ class Workshop(val steam: Steam, val store: Store, private val scope: CoroutineS
 
     fun isNew(it: Item) = it.created > store.readUpTo && store.seen[it.id] != true
 
+    /** 把时间线上现在所有的壁纸记为看过（已读线移到最新的一条）。 */
     fun markAllRead() {
         val v = timeline ?: return
-        if (v.ids.isEmpty()) return
+        if (v.ids.isEmpty() || unread == 0) return
         store.readUpTo = items[v.ids[0]]?.created ?: return
         store.seen.clear()
         store.save()
@@ -491,6 +541,31 @@ class Workshop(val steam: Steam, val store: Store, private val scope: CoroutineS
                 toast("读取简介失败：" + errText(e))
             }
             busy.remove(key)
+        }
+    }
+
+    // ---- comments ----
+
+    /** 壁纸的评论，ID → 已读到的评论。 */
+    val comments = mutableStateMapOf<String, Comments>()
+
+    /** 读评论的下一页（第一次打开详情时读第一页）。 */
+    fun loadComments(id: String) {
+        val it = items[id] ?: return
+        val c = comments.getOrPut(id) { Comments() }
+        if (c.loading || c.done) return
+        c.loading = true
+        c.error = null
+        scope.launch {
+            try {
+                val (total, list) = steam.comments(it.creator, id, c.list.size, 20)
+                c.total = total
+                c.list.addAll(list)
+                if (list.isEmpty() || c.list.size >= total) c.done = true
+            } catch (e: Exception) {
+                c.error = errText(e)
+            }
+            c.loading = false
         }
     }
 

@@ -1,4 +1,4 @@
-package com.werandom.workshop
+package com.tiger.steamwallpaper
 
 import android.text.Html
 import android.webkit.CookieManager
@@ -35,7 +35,16 @@ class Steam {
         // 桌面版 UA：Steam 返回的网页和电脑版看到的一样，解析规则才能通用
         const val UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
         private val STEAM_ID = Regex("^\\d{17}$")
+
+        private val COMMENT_TEXT = Regex("commentthread_comment_text\"[^>]*>(.*?)</div>\\s*<div class=\"comment_footer_ctn", RegexOption.DOT_MATCHES_ALL)
+        private val COMMENT_AUTHOR = Regex("commentthread_author_link\"[^>]*>\\s*<bdi>(.*?)</bdi>", RegexOption.DOT_MATCHES_ALL)
+        private val COMMENT_AVATAR = Regex("<img (?:src|srcset)=\"([^\"\\s]+)")
+        private val COMMENT_TIME = Regex("data-timestamp=\"(\\d+)\"")
+        private val COMMENT_MINI = Regex("commentthread_author_link\"[^>]*data-miniprofile=\"(\\d+)\"")
     }
+
+    /** 一条评论；[steamId] 是评论者（从 miniprofile 换算）。 */
+    class Comment(val name: String, val avatar: String, val time: Long, val text: String, val steamId: String)
 
     class Profile(val steamId: String, val name: String, val avatar: String)
 
@@ -211,6 +220,37 @@ class Steam {
             text
         }
     }
+
+    /**
+     * 壁纸下面的评论（公开接口，不需要登录），从新到旧，从第 [start] 条起最多 [count] 条。
+     * 返回评论总数和这一页的评论；作者主页不公开时 Steam 不给评论，抛出异常。
+     */
+    suspend fun comments(owner: String, id: String, start: Int, count: Int): Pair<Int, List<Comment>> = withContext(Dispatchers.IO) {
+        val form = FormBody.Builder().add("start", start.toString()).add("count", count.toString()).build()
+        val req = Request.Builder().url("$COMMUNITY/comment/PublishedFile_Public/render/$owner/$id/").post(form).build()
+        val text = http.newCall(req).execute().use { resp ->
+            val t = resp.body.string()
+            if (!resp.isSuccessful) throw SteamException(resp.code, "Steam 返回 ${resp.code}")
+            t
+        }
+        val o = JSONObject(text)
+        if (!o.optBoolean("success")) throw SteamException(0, if (o.optString("error").contains("private")) "作者的主页不公开，看不到评论" else o.optString("error").ifEmpty { "读取评论失败" })
+        o.optInt("total_count") to parseComments(o.optString("comments_html"))
+    }
+
+    private fun parseComments(html: String): List<Comment> =
+        html.split("class=\"commentthread_comment ").drop(1).mapNotNull { part ->
+            val textHtml = COMMENT_TEXT.find(part)?.groupValues?.get(1) ?: return@mapNotNull null
+            val text = Html.fromHtml(textHtml.replace(Regex("<div class=\"needs_content_check\">.*?</div>", RegexOption.DOT_MATCHES_ALL), "（这条评论还在等 Steam 审核）"), Html.FROM_HTML_MODE_LEGACY)
+                .toString().trim()
+            val name = COMMENT_AUTHOR.find(part)?.groupValues?.get(1)?.let { Html.fromHtml(it, Html.FROM_HTML_MODE_LEGACY).toString().trim() } ?: ""
+            val head = part.substringBefore("author_name_group")
+            // 头像在作者链接里（动态头像只有 srcset）；外面的是头像框
+            val avatar = COMMENT_AVATAR.find(head.substringAfter("data-miniprofile", ""))?.groupValues?.get(1) ?: ""
+            val time = COMMENT_TIME.find(part)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+            val mini = COMMENT_MINI.find(part)?.groupValues?.get(1)?.toLongOrNull()
+            Comment(name, avatar, time, text, mini?.let { (76561197960265728L + it).toString() } ?: "")
+        }
 
     /** 作者上传的 WE 壁纸，按发布时间从新到旧，每页 30 个（page 从 1 开始）。 */
     suspend fun creatorFiles(steamId: String, page: Int): CreatorPage {

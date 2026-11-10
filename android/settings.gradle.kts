@@ -26,5 +26,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "WERandomWorkshop"
+rootProject.name = "SteamWallpaper"
 include(":app")

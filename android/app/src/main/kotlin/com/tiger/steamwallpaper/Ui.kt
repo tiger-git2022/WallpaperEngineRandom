@@ -1,4 +1,4 @@
-package com.werandom.workshop
+package com.tiger.steamwallpaper
 
 import android.content.Context
 import android.content.Intent
@@ -6,6 +6,26 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material3.Icon
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshState
+import androidx.compose.material3.pulltorefresh.pullToRefresh
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.Stable
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -100,23 +120,28 @@ val ws: Workshop get() = App.instance.workshop
 // ---- images ----
 
 /**
- * 预览图：先显示 Steam CDN 的静态小图（[px] 宽），[animate] 时同时下载原图（动图），下载完成后换上去。
- * 离开屏幕（这个组合项被回收）时原图的请求随之取消。[onRatio] 收到小图的宽高比。
+ * 预览图：先显示 Steam CDN 的静态图（按控件实际的像素宽度要，不会比原图大），[animate] 时同时下载原图（动图），
+ * 下载完成后换上去。离开屏幕（这个组合项被回收）时原图的请求随之取消。[onRatio] 收到静态图的宽高比。
+ * 创意工坊的预览动图本身常常只有两三百像素宽、256 色，放大后会有点糊。
  */
 @Composable
 fun PreviewImage(
     url: String,
-    px: Int,
     animate: Boolean,
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
     onRatio: ((Float) -> Unit)? = null,
 ) {
-    Box(modifier) {
+    BoxWithConstraints(modifier) {
+        val density = LocalDensity.current
+        // 按 256 像素一档取整，同一张图在不同地方能共用缓存
+        val px = with(density) { if (constraints.hasBoundedWidth) constraints.maxWidth else 1080.dp.roundToPx() }
+            .let { ((it + 255) / 256 * 256).coerceIn(256, 2048) }
         AsyncImage(
             model = small(url, px),
             contentDescription = null,
             contentScale = contentScale,
+            filterQuality = FilterQuality.High,
             modifier = Modifier.fillMaxSize(),
             onSuccess = { s ->
                 val img = s.result.image
@@ -129,6 +154,7 @@ fun PreviewImage(
                 model = url,
                 contentDescription = null,
                 contentScale = contentScale,
+                filterQuality = FilterQuality.High,
                 modifier = Modifier.fillMaxSize().graphicsLayer { alpha = if (ready) 1f else 0f },
                 onSuccess = { ready = true },
             )
@@ -161,7 +187,7 @@ fun BigPicture(url: String, modifier: Modifier = Modifier, maxHeight: Dp = 480.d
             Modifier.size(w, h).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceVariant)
                 .then(inner).clickable(onClick = onClick),
         ) {
-            PreviewImage(url, 960, animate = true, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit, onRatio = { if (ratio == null) ratio = it.coerceIn(0.4f, 3f) })
+            PreviewImage(url, animate = true, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit, onRatio = { if (ratio == null) ratio = it.coerceIn(0.4f, 3f) })
         }
     }
 }
@@ -210,14 +236,64 @@ fun FollowButton(id: String, modifier: Modifier = Modifier) {
     if (!ws.me.loggedIn || id == ws.me.steamId) return
     val on = ws.isFollowing(id)
     val busy = ws.busy["follow:$id"] == true
-    val content: @Composable () -> Unit = {
-        if (busy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp) else Text(if (on) "已关注" else "+ 关注", fontSize = 13.sp)
-    }
     if (on) {
-        FilledTonalButton(onClick = { ws.follow(id, false) }, modifier = modifier.height(34.dp), contentPadding = PaddingValues(horizontal = 14.dp)) { content() }
+        Pill(if (busy) "…" else "已关注", onClick = { ws.follow(id, false) }, modifier = modifier)
     } else {
-        Button(onClick = { ws.follow(id, true) }, modifier = modifier.height(34.dp), contentPadding = PaddingValues(horizontal = 14.dp)) { content() }
+        Button(onClick = { ws.follow(id, true) }, modifier = modifier.heightIn(min = PillHeight), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)) {
+            if (busy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary) else Text("+ 关注", fontSize = 14.sp)
+        }
     }
+}
+
+val PillHeight = 36.dp
+
+/**
+ * 标签、筛选项和次要按钮：胶囊形。浅色主题是一层淡淡的底色、没有边框，深色主题是透明的底加白边（和 EhViewer 分支一样）；
+ * 选中时是玻璃里的一块主题色的光。
+ */
+@Composable
+fun Pill(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    selected: Boolean = false,
+    enabled: Boolean = true,
+    leading: ImageVector? = null,
+    trailing: ImageVector? = null,
+) {
+    val dark = isDark()
+    val shape = RoundedCornerShape(50)
+    val scheme = MaterialTheme.colorScheme
+    val content = (if (selected) scheme.primary else scheme.onSurface).let { if (enabled) it else it.copy(alpha = 0.4f) }
+    val fill = when {
+        selected -> glassSelectedColor()
+        dark -> Color.Transparent
+        else -> scheme.onSurface.copy(alpha = 0.07f)
+    }
+    Row(
+        modifier.heightIn(min = PillHeight).clip(shape).background(fill, shape)
+            .then(if (dark) Modifier.border(1.dp, Color.White.copy(alpha = if (selected) 0.8f else 0.55f), shape) else Modifier)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(start = if (leading != null) 12.dp else 16.dp, end = if (trailing != null) 10.dp else 16.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        if (leading != null) {
+            Icon(leading, null, tint = content, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+        }
+        Text(text, color = content, fontSize = 14.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1)
+        if (trailing != null) {
+            Spacer(Modifier.width(4.dp))
+            Icon(trailing, null, tint = content, modifier = Modifier.size(18.dp))
+        }
+    }
+}
+
+/** 一排会换行的胶囊，行和行之间留空。 */
+@Composable
+fun PillRow(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { content() }
 }
 
 /** 订阅按钮；已订阅时显示「已订阅」和取消订阅。 */
@@ -248,7 +324,6 @@ fun Badge(text: String, color: Color = Color.White, background: Color = Color.Bl
     )
 }
 
-fun ageColor(age: String) = if (age == "Mature") Tones.Mature else Tones.Questionable
 
 // ---- list footer ----
 
@@ -300,6 +375,60 @@ fun NeedLogin() {
             "时间线、搜索、订阅和关注都要用你的 Steam 账号。\n请登录电脑上 Steam 客户端用的那个账号，订阅的壁纸才会下载到那台电脑。",
             "登录 Steam",
         ) { LocalActions.login() }
+    }
+}
+
+// ---- pull to refresh ----
+
+/**
+ * 下拉刷新的指示（EhViewer 分支的 RefreshIndicator）：转圈的刷新箭头，放在一滴玻璃里。页面里的东西折射不到页面自己，
+ * 所以由外层（WorkshopApp）画在页面上面，页面在这里登记它的下拉状态。
+ */
+@Stable
+class RefreshHost {
+    var state by mutableStateOf<PullToRefreshState?>(null)
+    var refreshing by mutableStateOf(false)
+}
+
+val LocalRefreshHost = staticCompositionLocalOf { RefreshHost() }
+
+/** 可以下拉刷新的列表：在顶部继续往下拉，松手后 [onRefresh]。 */
+@Composable
+fun Refreshable(refreshing: Boolean, onRefresh: () -> Unit, content: @Composable () -> Unit) {
+    val state = rememberPullToRefreshState()
+    val host = LocalRefreshHost.current
+    SideEffect {
+        host.state = state
+        host.refreshing = refreshing
+    }
+    DisposableEffect(host, state) {
+        onDispose { if (host.state === state) host.state = null }
+    }
+    Box(Modifier.fillMaxSize().pullToRefresh(isRefreshing = refreshing, state = state, onRefresh = onRefresh)) { content() }
+}
+
+@Composable
+fun RefreshIndicator(host: RefreshHost, modifier: Modifier = Modifier) {
+    val state = host.state ?: return
+    val refreshing = host.refreshing
+    if (state.distanceFraction <= 0f && !refreshing) return
+    val spin = rememberInfiniteTransition(label = "refresh")
+    val angle by spin.animateFloat(0f, 360f, infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Restart), label = "spin")
+    val size = 42.dp
+    Box(
+        modifier.offset {
+            val travel = state.distanceFraction * PullToRefreshDefaults.PositionalThreshold.toPx() - size.toPx()
+            IntOffset(0, travel.roundToInt())
+        }
+            .graphicsLayer { alpha = if (refreshing) 1f else (state.distanceFraction * 2f).coerceIn(0f, 1f) }
+            .size(size)
+            .glass(CircleShape, MaterialTheme.colorScheme.surfaceContainerHigh, GlassStyle.Control),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            Icons.Rounded.Refresh, contentDescription = "刷新", tint = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.size(24.dp).graphicsLayer { rotationZ = if (refreshing) angle else state.distanceFraction.coerceIn(0f, 1f) * 270f },
+        )
     }
 }
 
@@ -395,7 +524,7 @@ val SheetPadding = PaddingValues(horizontal = 20.dp)
 
 @Composable
 fun Section(title: String) {
-    Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 14.dp, bottom = 6.dp))
+    Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 14.dp, bottom = 8.dp))
 }
 
 val Gap = Arrangement.spacedBy(8.dp)

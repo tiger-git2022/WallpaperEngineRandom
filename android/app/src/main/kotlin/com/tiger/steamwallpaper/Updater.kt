@@ -1,4 +1,4 @@
-package com.werandom.workshop
+package com.tiger.steamwallpaper
 
 import android.app.Activity
 import android.app.PendingIntent
@@ -29,7 +29,8 @@ import java.io.File
  * 启动时最多每 6 小时查一次，也可以手动查。下载 APK 后用 PackageInstaller 安装。
  */
 class Updater(private val app: App, private val http: OkHttpClient, private val store: Store, private val scope: CoroutineScope) {
-    class Release(val version: String, val notes: String, val apkUrl: String, val size: Long, val page: String)
+    /** [title] 是面板上显示的版本（正式版 v1.2.3，测试包是上传时间）；[version] 用来比较和记「以后再说」。 */
+    class Release(val version: String, val notes: String, val apkUrl: String, val size: Long, val page: String, val title: String = "v$version", val fileName: String = apkName(version))
 
     private val repo = BuildConfig.REPO
 
@@ -59,12 +60,14 @@ class Updater(private val app: App, private val http: OkHttpClient, private val 
         message = ""
         scope.launch {
             try {
-                val r = latest()
+                // 测试包：正式版没有更新时，再看预发布 android-test 里的测试包是不是比自己新
+                val r = latest()?.takeIf { compare(it.version, BuildConfig.VERSION_NAME) > 0 }
+                    ?: if (BuildConfig.TEST_BUILD) withContext(Dispatchers.IO) { testBuild() } else null
                 store.lastUpdateCheck = System.currentTimeMillis()
                 store.save()
                 when {
-                    r == null || compare(r.version, BuildConfig.VERSION_NAME) <= 0 -> {
-                        if (manual) app.workshop.toast("已经是最新版本 v${BuildConfig.VERSION_NAME}")
+                    r == null -> {
+                        if (manual) app.workshop.toast("已经是最新版本 v${BuildConfig.VERSION_NAME}" + if (BuildConfig.TEST_BUILD) "（测试包）" else "")
                     }
                     !manual && r.version == store.skippedVersion -> Unit
                     else -> available = r
@@ -98,7 +101,7 @@ class Updater(private val app: App, private val http: OkHttpClient, private val 
 
     private fun fromApi(): Release? {
         val req = Request.Builder().url("https://api.github.com/repos/$repo/releases?per_page=30")
-            .header("Accept", "application/vnd.github+json").header("User-Agent", "WERandomWorkshop").build()
+            .header("Accept", "application/vnd.github+json").header("User-Agent", "SteamWallpaper").build()
         val text = http.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful) throw Exception("GitHub 返回 ${resp.code}")
             resp.body.string()
@@ -119,9 +122,32 @@ class Updater(private val app: App, private val http: OkHttpClient, private val 
         return best
     }
 
+    /**
+     * 预发布 android-test 里的测试包（SteamWallpaper-test.apk）：上传时间比这个测试包的编译时间晚 2 分钟以上，就是新的。
+     * 版本号不变，装上去覆盖原来的。
+     */
+    private fun testBuild(): Release? {
+        val req = Request.Builder().url("https://api.github.com/repos/$repo/releases/tags/android-test")
+            .header("Accept", "application/vnd.github+json").header("User-Agent", "SteamWallpaper").build()
+        val text = http.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) throw Exception("GitHub 返回 ${resp.code}")
+            resp.body.string()
+        }
+        val r = org.json.JSONObject(text)
+        val assets = r.optJSONArray("assets") ?: return null
+        val apk = (0 until assets.length()).map { assets.getJSONObject(it) }.firstOrNull { it.optString("name") == TEST_APK } ?: return null
+        val time = runCatching { java.time.Instant.parse(apk.optString("updated_at")).toEpochMilli() }.getOrNull() ?: return null
+        if (time <= BuildConfig.BUILD_TIME + 120_000L) return null
+        val at = java.time.format.DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(java.time.ZoneId.systemDefault()).format(java.time.Instant.ofEpochMilli(time))
+        return Release(
+            "test-$time", "测试包，${at} 上传。装上后覆盖现在的测试包，数据和登录都保留。", apk.optString("browser_download_url"), apk.optLong("size"),
+            r.optString("html_url"), title = "测试包（$at）", fileName = TEST_APK,
+        )
+    }
+
     /** releases.atom 不占接口的额度；APK 的文件名是固定格式，可以直接拼出下载地址。 */
     private fun fromAtom(): Release? {
-        val req = Request.Builder().url("https://github.com/$repo/releases.atom").header("User-Agent", "WERandomWorkshop").build()
+        val req = Request.Builder().url("https://github.com/$repo/releases.atom").header("User-Agent", "SteamWallpaper").build()
         val text = http.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful) throw Exception("GitHub 返回 ${resp.code}")
             resp.body.string()
@@ -153,7 +179,7 @@ class Updater(private val app: App, private val http: OkHttpClient, private val 
     private fun fetch(r: Release): File {
         val dir = File(app.cacheDir, "update").apply { mkdirs() }
         dir.listFiles()?.forEach { it.delete() }
-        val file = File(dir, apkName(r.version))
+        val file = File(dir, r.fileName)
         http.newCall(Request.Builder().url(r.apkUrl).build()).execute().use { resp ->
             if (!resp.isSuccessful) throw Exception("GitHub 返回 ${resp.code}")
             val total = resp.body.contentLength().takeIf { it > 0 } ?: r.size
@@ -228,7 +254,9 @@ class Updater(private val app: App, private val http: OkHttpClient, private val 
     }
 
     companion object {
-        fun apkName(version: String) = "WERandomWorkshop-v$version.apk"
+        const val TEST_APK = "SteamWallpaper-test.apk"
+
+fun apkName(version: String) = "SteamWallpaper-v$version.apk"
 
         /** 比较 x.y.z 版本号。 */
         fun compare(a: String, b: String): Int {

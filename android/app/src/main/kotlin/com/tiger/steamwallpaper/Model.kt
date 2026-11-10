@@ -1,4 +1,4 @@
-package com.werandom.workshop
+package com.tiger.steamwallpaper
 
 import org.json.JSONArray
 import org.json.JSONObject
@@ -96,7 +96,7 @@ data class Item(
 // ---- tags (same groups as Wallpaper Engine) ----
 
 val TYPE = listOf("Scene" to "场景", "Video" to "视频", "Web" to "网页", "Application" to "应用")
-val AGE = listOf("Everyone" to "全年龄", "Questionable" to "轻度", "Mature" to "成人")
+val AGE = listOf("Everyone" to "全年龄", "Questionable" to "轻度成人", "Mature" to "成人")
 val RES = listOf(
     "1920 x 1080" to "1920×1080", "2560 x 1440" to "2560×1440", "3840 x 2160" to "3840×2160", "3440 x 1440" to "3440×1440 带鱼屏",
     "1080 x 1920" to "1080×1920 竖屏", "2160 x 3840" to "2160×3840 竖屏", "Dynamic resolution" to "自适应分辨率",

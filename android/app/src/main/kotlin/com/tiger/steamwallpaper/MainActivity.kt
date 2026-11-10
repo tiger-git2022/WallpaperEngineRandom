@@ -1,4 +1,4 @@
-package com.werandom.workshop
+package com.tiger.steamwallpaper
 
 import android.content.Intent
 import android.os.Bundle
@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -133,8 +134,12 @@ fun WorkshopApp(activity: MainActivity) {
     val viewport = remember { derivedStateOf { Rect(0f, topBottom, width, barTop) } }
 
     BackHandler(ws.stack.isNotEmpty()) { ws.back() }
+    val refreshHost = remember { RefreshHost() }
 
-    CompositionLocalProvider(LocalContentPadding provides contentPadding, LocalViewport provides viewport, LocalPageBackdrop provides backdrop) {
+    CompositionLocalProvider(
+        LocalContentPadding provides contentPadding, LocalViewport provides viewport, LocalPageBackdrop provides backdrop,
+        LocalRefreshHost provides refreshHost,
+    ) {
         Box(
             Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).onGloballyPositioned { width = it.size.width.toFloat() },
         ) {
@@ -158,6 +163,9 @@ fun WorkshopApp(activity: MainActivity) {
                     }
                 }
             }
+
+            // 下拉刷新的那滴玻璃：画在页面上面，才能折射页面
+            RefreshIndicator(refreshHost, Modifier.align(Alignment.TopCenter).padding(top = contentPadding.calculateTopPadding()))
 
             TopBar(
                 modifier = Modifier.align(Alignment.TopCenter).windowInsetsPadding(WindowInsets.statusBars).padding(top = 8.dp, start = 12.dp, end = 12.dp)
@@ -286,9 +294,26 @@ private fun TabBar(modifier: Modifier) {
                     .background(if (on) glassSelectedColor() else androidx.compose.ui.graphics.Color.Transparent)
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = androidx.compose.material3.ripple()) {
                         if (on) {
-                            // 再点一次当前标签：回到顶部
-                            ws.timeline?.takeIf { t.key == "timeline" }?.let { v -> scope.launch { v.list.animateScrollToItem(0) } }
-                            ws.browse?.takeIf { t.key == "browse" }?.let { v -> scope.launch { v.grid.animateScrollToItem(0) } }
+                            // 再点一次当前标签：不在顶部就回到顶部，已经在顶部就刷新
+                            when (t.key) {
+                                "timeline" -> ws.timeline?.let { v ->
+                                    if (v.list.firstVisibleItemIndex == 0 && v.list.firstVisibleItemScrollOffset == 0) {
+                                        ws.refresh(v)
+                                    } else {
+                                        // 点标签回到顶部：中间跳过的也都算看过
+                                        ws.markAllRead()
+                                        scope.launch { v.list.animateScrollToItem(0) }
+                                    }
+                                }
+                                "browse" -> ws.browse?.let { v ->
+                                    if (v.grid.firstVisibleItemIndex == 0 && v.grid.firstVisibleItemScrollOffset == 0) ws.refresh(v)
+                                    else scope.launch { v.grid.animateScrollToItem(0) }
+                                }
+                                else -> with(ws.followingList) {
+                                    if (firstVisibleItemIndex == 0 && firstVisibleItemScrollOffset == 0) ws.loadFollows()
+                                    else scope.launch { animateScrollToItem(0) }
+                                }
+                            }
                         } else {
                             ws.detail = null
                             ws.openTab(t.key)
@@ -297,13 +322,16 @@ private fun TabBar(modifier: Modifier) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
-                Box {
-                    Icon(t.icon, contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
+                Box(Modifier.size(24.dp)) {
+                    Icon(t.icon, contentDescription = null, tint = color, modifier = Modifier.fillMaxSize())
                     if (t.key == "timeline" && ws.unread > 0) {
+                        // 角标放在图标右上角的外面，不盖住图标
                         Text(
                             if (ws.unread > 99) "99+" else ws.unread.toString(),
-                            color = androidx.compose.ui.graphics.Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1,
-                            modifier = Modifier.align(Alignment.TopEnd).offset(x = 14.dp, y = (-5).dp).clip(CircleShapeR).background(Tones.New).padding(horizontal = 5.dp),
+                            color = androidx.compose.ui.graphics.Color.White, fontSize = 10.sp, lineHeight = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+                            modifier = Modifier.align(Alignment.TopStart).offset(x = 23.dp, y = (-4).dp)
+                                .wrapContentSize(Alignment.TopStart, unbounded = true)
+                                .clip(CircleShapeR).background(Tones.New).padding(horizontal = 5.dp, vertical = 1.dp),
                         )
                     }
                 }

@@ -1,6 +1,8 @@
-package com.werandom.workshop
+package com.tiger.steamwallpaper
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -48,7 +50,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 
 /** 时间线的一条：一个壁纸，或者同一作者连续上传的几个（合并时）。 */
 class Post(val creator: String, val read: Boolean, val items: List<Item>)
@@ -88,63 +91,84 @@ fun TimelinePage() {
     val b = ws.boundaryIndex(v)
     val hasDivider = b > 0 && b < v.ids.size
     val dividerAt = if (hasDivider) posts.indexOfFirst { it.read }.takeIf { it >= 0 } else null
-    val scope = rememberCoroutineScope()
     val pad = LocalContentPadding.current
+    // 列表里每一项的 key，和下面 LazyColumn 的顺序一致（找上次看到的位置用）
+    val keys = buildList {
+        add("head")
+        posts.forEachIndexed { i, post ->
+            if (i == dividerAt) add("divider")
+            add("p:" + post.items[0].id)
+        }
+    }
 
     LaunchedEffect(v) {
         snapshotFlow {
             val info = v.list.layoutInfo
             (info.visibleItemsInfo.lastOrNull()?.index ?: 0) >= info.totalItemsCount - 4
-        }.collect { near -> if (near && !v.loading && !v.done && v.error == null && v.ids.isNotEmpty()) ws.loadMore(v) }
+        }.collect { near -> if (near && !v.loading && !v.done && v.error == null && v.ids.isNotEmpty() && v.settled) ws.loadMore(v) }
+    }
+    // 打开时回到上次看到的位置：那一项还在列表里就滚过去，否则停在已读线（刚看过的地方）
+    LaunchedEffect(v, v.settled) {
+        if (!v.settled || v.restored) return@LaunchedEffect
+        v.restored = true
+        val saved = store.timelineKey
+        // 合并显示时上次的那一项可能在别的组里：按壁纸 ID 找它所在的组
+        val savedId = saved.removePrefix("p:")
+        val i = keys.indexOf(saved).takeIf { it >= 0 }
+            ?: posts.indexOfFirst { p -> p.items.any { it.id == savedId } }.takeIf { it >= 0 && saved.startsWith("p:") }?.let { keys.indexOf("p:" + posts[it].items[0].id) }
+            ?: keys.indexOf("divider").takeIf { it >= 0 }
+        if (i != null && i > 0) v.list.scrollToItem(i, if (keys.getOrNull(i) == saved) store.timelineOffset else 0)
+    }
+    // 记下现在看到的位置（停下来 0.5 秒后）
+    LaunchedEffect(v) {
+        snapshotFlow { v.list.firstVisibleItemIndex to v.list.firstVisibleItemScrollOffset }.collectLatest { (index, offset) ->
+            if (!v.restored) return@collectLatest
+            delay(500)
+            val key = v.list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }?.key as? String ?: return@collectLatest
+            if (key == "more") return@collectLatest
+            if (store.timelineKey != key || store.timelineOffset != offset) {
+                store.timelineKey = key
+                store.timelineOffset = offset
+                store.save()
+            }
+        }
     }
 
-    LazyColumn(
-        state = v.list,
-        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = pad.calculateTopPadding(), bottom = pad.calculateBottomPadding()),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier.fillMaxSize(),
-    ) {
-        item("head") {
-            TimelineHeader(v, hasDivider) {
-                val index = (dividerAt ?: return@TimelineHeader) + 1
-                scope.launch {
-                    val h = v.list.layoutInfo.viewportSize.height
-                    v.list.animateScrollToItem(index, -h / 3)
+    Refreshable(refreshing = v.refreshing != null, onRefresh = { ws.refresh(v) }) {
+        LazyColumn(
+            state = v.list,
+            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = pad.calculateTopPadding(), bottom = pad.calculateBottomPadding()),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            item("head") { TimelineHeader() }
+            if (!v.loading && v.error == null && v.done && posts.isEmpty()) {
+                item("empty") {
+                    EmptyState("时间线是空的", "还没有关注任何作者，或者关注的作者还没发布过壁纸。\n在壁纸详情里点作者旁边的「关注」，或在 Steam 里关注创意工坊作者。")
                 }
             }
-        }
-        if (!v.loading && v.error == null && v.done && posts.isEmpty()) {
-            item("empty") {
-                EmptyState("时间线是空的", "还没有关注任何作者，或者关注的作者还没发布过壁纸。\n在壁纸详情里点作者旁边的「关注」，或在 Steam 里关注创意工坊作者。")
+            posts.forEachIndexed { i, post ->
+                if (i == dividerAt) {
+                    item("divider") { ReadDivider(store.readUpTo) }
+                }
+                item("p:" + post.items[0].id) {
+                    if (post.items.size == 1) SinglePost(post.items[0], post.read) else GroupPost(post)
+                }
             }
+            item("more") { MoreFooter(v) }
         }
-        posts.forEachIndexed { i, post ->
-            if (i == dividerAt) {
-                item("divider") { ReadDivider(store.readUpTo) }
-            }
-            item("p:" + post.items[0].id) {
-                if (post.items.size == 1) SinglePost(post.items[0], post.read) else GroupPost(post)
-            }
-        }
-        item("more") { MoreFooter(v) }
     }
 }
 
 @Composable
-private fun TimelineHeader(v: ListView, hasDivider: Boolean, jump: () -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("关注的作者的新作品", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            if (ws.unread > 0) {
-                Spacer(Modifier.width(8.dp))
-                Badge(if (ws.unread > 99) "99+" else "${ws.unread} 条未读", background = Tones.New)
-            }
-        }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(selected = ws.store.mergePosts, onClick = { ws.setMerge(!ws.store.mergePosts) }, label = { Text("合并同一作者的连续上传") })
-            AssistChip(onClick = jump, enabled = hasDivider, label = { Text("跳到上次看到的位置") })
-            AssistChip(onClick = { ws.markAllRead() }, enabled = v.ids.isNotEmpty(), label = { Text("全部标为已读") })
-            AssistChip(onClick = { ws.refreshTimeline() }, label = { Text("刷新") })
+private fun TimelineHeader() {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("关注的作者的新作品", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+        if (ws.unread > 0) {
+            Spacer(Modifier.width(8.dp))
+            Badge(if (ws.unread > 99) "99+ 未读" else "${ws.unread} 条未读", background = Tones.New)
+            Spacer(Modifier.weight(1f))
+            Pill("全部已读", onClick = { ws.markAllRead() }, leading = Icons.Default.DoneAll)
         }
     }
 }
@@ -187,7 +211,7 @@ private fun PostHeader(creator: String, sub: String) {
 @Composable
 private fun SinglePost(it: Item, read: Boolean) {
     PostCard(read) {
-        val meta = listOf(label(it.type).takeIf { _ -> it.type.isNotEmpty() }, label(it.age).takeIf { _ -> it.age.isNotEmpty() }, it.resolution.replace(" x ", "×").ifEmpty { null })
+        val meta = listOf(label(it.type).takeIf { _ -> it.type.isNotEmpty() }, it.resolution.replace(" x ", "×").ifEmpty { null })
             .filterNotNull().joinToString(" · ")
         PostHeader(it.creator, ago(it.created) + if (meta.isNotEmpty()) " · $meta" else "")
         WallpaperBody(it, track = true)
@@ -219,7 +243,7 @@ private fun GroupPost(post: Post) {
                                         if (!selected) ws.markSeen(item.id)
                                     },
                             ) {
-                                PreviewImage(item.preview, 320, animate = true, modifier = Modifier.fillMaxSize())
+                                PreviewImage(item.preview, animate = true, modifier = Modifier.fillMaxSize())
                                 TileBadges(item, timeline = true)
                             }
                             Text(
@@ -250,7 +274,6 @@ private fun GroupPost(post: Post) {
 /** 一个壁纸的标题、简介、大图（和其他预览图）、标签、数字和操作栏。 */
 @Composable
 fun WallpaperBody(it: Item, track: Boolean) {
-    val context = LocalContext.current
     val desc = bbcode(it.description ?: it.short)
     val more = it.description == null && desc.length >= 120
     Text(it.title, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
@@ -275,8 +298,8 @@ fun WallpaperBody(it: Item, track: Boolean) {
     }
     val tags = it.tags.filter { t -> t != "Wallpaper" && t != it.type && t != it.age && !isResolutionTag(t) }
     if (tags.isNotEmpty()) {
-        FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            tags.forEach { t -> SuggestionChip(onClick = { ws.searchTag(t) }, label = { Text(label(t), fontSize = 12.sp) }, modifier = Modifier.height(30.dp)) }
+        PillRow(Modifier.padding(top = 10.dp)) {
+            tags.forEach { t -> Pill(label(t), onClick = { ws.searchTag(t) }) }
         }
     }
     val total = (it.votesUp ?: 0) + (it.votesDown ?: 0)
@@ -290,8 +313,7 @@ fun WallpaperBody(it: Item, track: Boolean) {
     FlowRow(Modifier.fillMaxWidth().padding(top = 6.dp), verticalArrangement = Arrangement.Center, itemVerticalAlignment = Alignment.CenterVertically) {
         SubscribeRow(it)
         TextButton(onClick = { ws.openAuthor(it.creator) }) { Text("作者的全部作品") }
-        TextButton(onClick = { ws.openDetail(it.id) }) { Text("详情") }
-        TextButton(onClick = { openUrl(context, workshopUrl(it.id)) }) { Text("网页") }
+        TextButton(onClick = { ws.openDetail(it.id) }) { Text("详情和评论") }
     }
 }
 
@@ -323,13 +345,12 @@ fun PreviewStrip(it: Item, current: String, onPick: (String) -> Unit) {
     }
 }
 
-/** 图片上的角标：NEW、年龄分级、类型、已订阅。 */
+/** 图片上的角标：NEW、类型、已订阅（不显示年龄分级）。 */
 @Composable
 fun TileBadges(it: Item, timeline: Boolean) {
     Box(Modifier.fillMaxSize().padding(6.dp)) {
         Row(Modifier.align(Alignment.TopStart), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             if (timeline && ws.isNew(it)) Badge("NEW", background = Tones.New)
-            if (it.age.isNotEmpty() && it.age != "Everyone") Badge(label(it.age), color = ageColor(it.age))
         }
         if (!timeline && it.type.isNotEmpty()) Badge(label(it.type), modifier = Modifier.align(Alignment.TopEnd))
         if (ws.isSubscribed(it.id)) Badge("✓ 已订阅", background = Tones.Ok.copy(alpha = 0.92f), modifier = Modifier.align(Alignment.BottomEnd))

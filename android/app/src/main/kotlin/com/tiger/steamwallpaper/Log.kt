@@ -1,13 +1,13 @@
-package com.werandom.workshop
+package com.tiger.steamwallpaper
 
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** 简单的日志：logcat（标签 WERandomWorkshop）加 App 私有目录里的 log.txt（超过 512 KB 时截掉前一半）。 */
+/** 简单的日志：logcat（标签 SteamWallpaper）加 App 私有目录里的 log.txt（超过 512 KB 时截掉前一半）。 */
 object Log {
-    private const val TAG = "WERandomWorkshop"
+    private const val TAG = "SteamWallpaper"
     private var file: File? = null
 
     fun init(dir: File) {

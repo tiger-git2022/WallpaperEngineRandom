@@ -1,8 +1,8 @@
 name: Android
 
-# 安卓工坊 App（android/）的编译和发布，和电脑版（release.yml）分开：
+# SteamWallpaper（android/，浏览 Steam 上关注的壁纸的安卓 App）的编译和发布，和电脑版（release.yml）分开：
 # - 推送到 main 时：取 android/CHANGELOG.md 最上面的版本（如 “## [0.1.0] - 2026-11-10”）。标了日期、
-#   而且还没有 android-v版本号 标签，就编译并发布 Release「安卓版 v版本号」，附上 APK；否则只编译。
+#   而且还没有 android-v版本号 标签，就编译并发布 Release「SteamWallpaper v版本号（安卓）」，附上 APK；否则只编译。
 #   标成“未发布”的版本只编译，APK 作为 artifact 上传。
 # - PR 和手动运行：只编译。
 # 电脑版的更新程序读 releases/latest，所以安卓版的 Release 一律 make_latest: false，绝不能成为 Latest。
@@ -88,13 +88,13 @@ jobs:
       - name: Package
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk "dist/WERandomWorkshop-v$VERSION.apk"
+          cp app/build/outputs/apk/release/app-release.apk "dist/SteamWallpaper-v$VERSION.apk"
           ls -la dist
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: WERandomWorkshop-android
+          name: SteamWallpaper-android
           path: android/dist/*.apk
 
       - name: Release
@@ -102,7 +102,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: android-v${{ env.VERSION }}
-          name: 安卓版 v${{ env.VERSION }}
+          name: SteamWallpaper v${{ env.VERSION }}（安卓）
           target_commitish: ${{ github.sha }}
           body_path: ${{ runner.temp }}/notes.md
           files: android/dist/*.apk
