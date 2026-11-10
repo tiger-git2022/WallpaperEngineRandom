@@ -1215,6 +1215,22 @@ public class Engine
 		return text;
 	}
 
+	/// <summary>查重页的「应用」：把这个壁纸放到桌面上（按设置里的显示器），用来和同组的其他壁纸对比。不计入播放记录和轮次。</summary>
+	public void ApplyForCompare(string id)
+	{
+		Paths paths = ResolvePaths();
+		string project = paths.Workshop.Select((string w) => Path.Combine(w, id, "project.json")).FirstOrDefault(File.Exists);
+		if (project == null)
+		{
+			throw new Exception("这台电脑上没有这个壁纸（可能已经取消订阅）");
+		}
+		foreach (int m in Cfg.MonitorList(_pf.MonitorCount()))
+		{
+			_pf.OpenWallpaper(paths.Exe, project, m);
+		}
+		Log.Log("查重：应用 [" + id + "] 对比");
+	}
+
 	public Preview BuildPreview()
 	{
 		Preview preview = new Preview();
