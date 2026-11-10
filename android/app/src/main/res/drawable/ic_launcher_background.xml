@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 白底：桌面按自己的形状裁（vivo 是圆角方块），和其他白底图标一样 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <gradient android:angle="135" android:startColor="#2A475E" android:endColor="#171A21" />
+    <solid android:color="#FFFFFF" />
 </shape>
