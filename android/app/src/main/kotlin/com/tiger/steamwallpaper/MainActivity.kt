@@ -406,8 +406,10 @@ private fun TabBar(modifier: Modifier) {
             // 离高亮最近的那个标签算选中：滑过一半时文字颜色就换过去
             val on = atTabs && kotlin.math.abs(pos - i) < 0.5f
             val color = if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-            Column(
-                Modifier.weight(1f).fillMaxHeight().clip(CircleShapeR)
+            // 只裁点按的高亮（圆头），标签里的内容不裁：未读角标伸到圆角外面也完整显示
+            Box(Modifier.weight(1f).fillMaxHeight()) {
+            Box(
+                Modifier.matchParentSize().clip(CircleShapeR)
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = androidx.compose.material3.ripple()) {
                         if (on) {
                             // 再点一次当前标签：不在顶部就回到顶部，已经在顶部就刷新
@@ -444,9 +446,8 @@ private fun TabBar(modifier: Modifier) {
                             ws.openTab(t.key)
                         }
                     },
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
+            )
+            Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                 Box(Modifier.size(24.dp)) {
                     Icon(t.icon, contentDescription = null, tint = color, modifier = Modifier.fillMaxSize())
                     val badge = when (t.key) {
@@ -466,6 +467,7 @@ private fun TabBar(modifier: Modifier) {
                     }
                 }
                 Text(t.title, fontSize = 11.sp, color = color, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
+            }
             }
         }
     }
