@@ -1315,7 +1315,7 @@ function renderActions(box, it) {
     : st === 'pending' ? '<div class="status wait">已订阅，等待 Steam 客户端下载（Steam 要在运行）</div>' : '';
   if (msg) box.appendChild(h(msg));
 }
-async function doSubscribe(it, on) {
+async function doSubscribe(it, on, quiet) {
   let ok2 = false;
   try {
     const ok = await host.call('subscribe', { id: it.id, on });
@@ -1324,7 +1324,7 @@ async function doSubscribe(it, on) {
     const owner = subscriber().steamid;
     if (S.subs && S.subs.owner === owner) { if (on) S.subs.ids[it.id] = 1; else delete S.subs.ids[it.id]; }
     if (on) { S.pending[it.id] = Date.now(); unsubscribed.delete(it.id); toast('已订阅「' + it.title + '」' + (to ? '到' + to : '') + '，Steam 客户端会自动下载'); }
-    else { delete S.pending[it.id]; unsubscribed.add(it.id); toast('已' + (to ? '从' + to : '') + '取消订阅'); }
+    else { delete S.pending[it.id]; unsubscribed.add(it.id); if (!quiet) toast('已' + (to ? '从' + to : '') + '取消订阅'); }
     save();
     ok2 = true;
   } catch (e) {
@@ -1612,7 +1612,7 @@ async function cancelDupes(gi, cancelId) {
   ];
   if (!lines.length) { for (const x of others) dupe.removed.add(x.id); renderDupes(true); toast('它已经不在电脑和设备上了'); return; }
   let failed = 0;
-  for (const x of unsub) if (!await doSubscribe(items.get(x.id) || { id: x.id, title: dupeTitle(x) }, false)) failed++;
+  for (const x of unsub) if (!await doSubscribe(items.get(x.id) || { id: x.id, title: dupeTitle(x) }, false, true)) failed++;
   for (const t of trash) {
     try {
       const moved = await host.call('deviceTrash', { serial: t.d.serial, library: t.d.library, ids: t.ids });
@@ -1622,8 +1622,7 @@ async function cancelDupes(gi, cancelId) {
   for (const d of send) { const l = c.send[d.model] || (c.send[d.model] = []); if (!l.includes(keepId)) l.push(keepId); }
   for (const x of others) { if (!onDevices(x.id).length && !(installed.has(x.id) && !unsubscribed.has(x.id))) dupe.removed.add(x.id); }
   save(); renderDupes(true);
-  const did = [unsub.length ? '取消订阅' : '', trash.length ? '从' + trash.map(x => x.d.model).join('、') + '挪走' : '', send.length ? '把「' + dupeTitle(keep) + '」加到要发到设备的列表' : ''].filter(Boolean).join('，');
-  toast(failed ? `有 ${failed} 项没做成，详见上面的提示` : `已取消「${dupeTitle(others[0])}」：${did}`, 6000);
+  if (failed) toast(`有 ${failed} 项没做成，详见上面的提示`, 6000);
 }
 document.addEventListener('click', async e => {
   if (S.tab !== 'dupes' || current) return;
