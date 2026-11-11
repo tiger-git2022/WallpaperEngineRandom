@@ -7,7 +7,7 @@ Wallpaper Engine 壁纸、直接订阅（由电脑上的 Steam 下载）。版�
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 最上面一节标了日期、合并到 main 后自动发布；标「未发布」时只编译。
 
-## [0.4.0] - 2026-11-11
+## [0.4.1] - 2026-11-11
 
 ### 新增
 - App 改名「Steam信息流」，加了「新闻」标签页（放在最前面），功能和电脑版 SteamNewsFeed 一样：
