@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 和电脑版 SteamNewsFeed 同一个图标（windows/SteamNewsFeed/icon.png 的形状），缩进 66 dp 的安全区。由 make_icon.py 生成。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group android:scaleX="0.28" android:scaleY="0.28" android:translateX="17.32" android:translateY="17.6">
+        <path android:fillColor="#FFFFFFFF" android:fillAlpha="0.5" android:fillType="evenOdd" android:pathData="M93,46 h102 a14,14 0 0 1 14,14 v121 a14,14 0 0 1 -14,14 h-102 a14,14 0 0 1 -14,-14 v-121 a14,14 0 0 1 14,-14 z M161,72 a31,31 0 1 0 62,0 a31,31 0 1 0 -62,0 z" />
+        <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd" android:pathData="M61,71 h110 a14,14 0 0 1 14,14 v120 a14,14 0 0 1 -14,14 h-110 a14,14 0 0 1 -14,-14 v-120 a14,14 0 0 1 14,-14 z M68,85 h96 a7,7 0 0 1 7,7 v36 a7,7 0 0 1 -7,7 h-96 a7,7 0 0 1 -7,-7 v-36 a7,7 0 0 1 7,-7 z M67.5,151 h98.0 a6.5,6.5 0 0 1 6.5,6.5 v0.0 a6.5,6.5 0 0 1 -6.5,6.5 h-98.0 a6.5,6.5 0 0 1 -6.5,-6.5 v-0.0 a6.5,6.5 0 0 1 6.5,-6.5 z M67.5,177 h63.0 a6.5,6.5 0 0 1 6.5,6.5 v0.0 a6.5,6.5 0 0 1 -6.5,6.5 h-63.0 a6.5,6.5 0 0 1 -6.5,-6.5 v-0.0 a6.5,6.5 0 0 1 6.5,-6.5 z M161,72 a31,31 0 1 0 62,0 a31,31 0 1 0 -62,0 z" />
+        <path android:fillColor="#FFFFFFFF" android:pathData="M169,72 a23,23 0 1 0 46,0 a23,23 0 1 0 -46,0 z" />
+    </group>
+</vector>
