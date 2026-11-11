@@ -155,6 +155,15 @@
                                     </ui:CardControl.Header>
                                     <ui:Button Content="查看设备同步" Tag="4" Click="Nav_Click"/>
                                 </ui:CardControl>
+                                <ui:CardControl Icon="{ui:SymbolIcon ArrowSync24}">
+                                    <ui:CardControl.Header>
+                                        <StackPanel>
+                                            <TextBlock Text="版本" FontWeight="SemiBold"/>
+                                            <TextBlock x:Name="HomeVersion" Style="{StaticResource Muted}" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                    </ui:CardControl.Header>
+                                    <ui:Button x:Name="UpdateButton" Content="检查更新" Click="CheckUpdate_Click"/>
+                                </ui:CardControl>
                                 <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
                                     <ui:Button Content="查看日志" Icon="{ui:SymbolIcon DocumentText24}" Margin="0,0,8,0" Click="OpenLog_Click"/>
                                     <ui:Button Content="打开程序文件夹" Icon="{ui:SymbolIcon Folder24}" Click="OpenFolder_Click"/>

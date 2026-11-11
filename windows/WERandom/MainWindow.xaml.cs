@@ -99,8 +99,10 @@ public partial class MainWindow : FluentWindow
 			}
 		});
 		Action onPortrait = () => Dispatcher.BeginInvoke((Action)UpdateDevices);
+		Action onUpdate = () => Dispatcher.BeginInvoke((Action)UpdateVersion);
 		_app.Switched += onSwitched;
 		_app.Portrait.StateChanged += onPortrait;
+		_app.UpdateStateChanged += onUpdate;
 		_refresh = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
 		_refresh.Tick += delegate { UpdateStatus(); };
 		_refresh.Start();
@@ -109,11 +111,13 @@ public partial class MainWindow : FluentWindow
 			_refresh.Stop();
 			_app.Switched -= onSwitched;
 			_app.Portrait.StateChanged -= onPortrait;
+			_app.UpdateStateChanged -= onUpdate;
 		};
 		Loaded += delegate
 		{
 			UpdateStatus();
 			UpdateDevices();
+			UpdateVersion();
 			if (string.IsNullOrEmpty(_engine.LastTitle))
 			{
 				ThreadPool.QueueUserWorkItem(delegate
@@ -310,6 +314,20 @@ public partial class MainWindow : FluentWindow
 	private void OpenFolder_Click(object sender, RoutedEventArgs e)
 	{
 		Open(_engine.Dir);
+	}
+
+	private void CheckUpdate_Click(object sender, RoutedEventArgs e)
+	{
+		_app.CheckUpdatesNow();
+	}
+
+	private void UpdateVersion()
+	{
+		string status = _app.UpdateStatus, latest = _app.AvailableVersion;
+		HomeVersion.Text = "当前 v" + Updater.CurrentVersion + (status != null ? "，" + status : latest != null ? "，有新版本 v" + latest : "");
+		UpdateButton.Content = latest != null ? "更新到 v" + latest : "检查更新";
+		UpdateButton.Appearance = latest != null ? ControlAppearance.Primary : ControlAppearance.Secondary;
+		UpdateButton.IsEnabled = status == null;
 	}
 
 	private static void Open(string path)
