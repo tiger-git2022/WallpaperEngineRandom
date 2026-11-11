@@ -1524,6 +1524,8 @@ function paintDupeStatus() {
 }
 function renderDupes(keepScroll) {
   if (S.tab !== 'dupes' || current) return;
+  // while the similarity slider is held, redrawing (e.g. Steam details arriving) would replace it and snap it back
+  if (dupe.sliding) { dupe.renderLater = true; return; }
   const main = $('#main'), top = main.scrollTop, c = dcfg(); $('#mainhead').innerHTML = '';
   syncDetail();
   dupe.groups = buildGroups();
@@ -1565,7 +1567,16 @@ function renderDupes(keepScroll) {
   }
   const r = $('#dmin');
   r.oninput = () => { $('#dminv').textContent = Math.round(r.value * 100) + '%'; };
-  r.onchange = () => { c.min = +r.value; save(); dupe.shown = 20; dupe.rank = null; renderDupes(); };
+  r.onpointerdown = () => {
+    dupe.sliding = true;
+    const up = () => {
+      removeEventListener('pointerup', up, true); removeEventListener('pointercancel', up, true);
+      // after the change event (which redraws by itself when the value moved)
+      setTimeout(() => { dupe.sliding = false; if (dupe.renderLater) { dupe.renderLater = false; renderDupes(true); } }, 0);
+    };
+    addEventListener('pointerup', up, true); addEventListener('pointercancel', up, true);
+  };
+  r.onchange = () => { c.min = +r.value; save(); dupe.shown = 20; dupe.rank = null; dupe.sliding = false; dupe.renderLater = false; renderDupes(); };
   $('#donly').onchange = e => { c.onlyDevice = e.target.checked; save(); dupe.shown = 20; dupe.rank = null; renderDupes(); };
   $('#daddr').onchange = e => { c.addrs = e.target.value.split(/[,，\s]+/).map(x => x.trim()).filter(Boolean); save(); };
   if (keepScroll) main.scrollTop = top;
