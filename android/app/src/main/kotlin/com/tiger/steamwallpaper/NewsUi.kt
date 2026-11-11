@@ -3,6 +3,7 @@ package com.tiger.steamwallpaper
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -237,50 +238,70 @@ private fun NewsFooter() {
 private fun NewsCard(it: NewsItem) {
     val feed = news
     val open = feed.expanded[it.key] == true
+    val scope = rememberCoroutineScope()
+    // 点卡片任意处（标题、封面、摘要、正文）展开 / 收起；收起时这条的开头已经滚出屏幕，就滚回这条的开头
     val toggle: () -> Unit = {
         if (it.kind == "event") {
-            if (open) feed.expanded.remove(it.key) else feed.expanded.put(it.key, true)
+            if (open) {
+                feed.expanded.remove(it.key)
+                val info = feed.list.layoutInfo.visibleItemsInfo.firstOrNull { v -> v.key == it.key }
+                if (info != null && info.offset < 0) {
+                    val i = layoutKeys(feed).indexOf(it.key)
+                    if (i >= 0) scope.launch { feed.list.scrollToItem(i) }
+                }
+            } else {
+                feed.expanded[it.key] = true
+            }
         }
     }
-    Column(Modifier.fillMaxWidth().card(RoundedCornerShape(22.dp)).padding(14.dp)) {
+    Column(
+        Modifier.fillMaxWidth().card(RoundedCornerShape(22.dp))
+            .clickable(enabled = it.kind == "event", onClick = toggle)
+            .padding(14.dp),
+    ) {
         SourceRow(it)
         if (it.kind == "release") {
             ReleaseBody(it)
             return@Column
         }
-        Text(
-            it.title, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 22.sp,
-            modifier = Modifier.padding(top = 10.dp).clickable(onClick = toggle),
-        )
+        Text(it.title, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 22.sp, modifier = Modifier.padding(top = 10.dp))
         val img = it.image.ifEmpty { bbFirstImage(it.body) }.ifEmpty { it.release?.capsule ?: "" }
         if (img.isNotEmpty() && !open) {
             BigPicture(img, Modifier.padding(top = 10.dp), maxHeight = 420.dp, onLongClick = { LocalActions.lightbox(img) }, onClick = toggle)
         }
         if (open) {
             NewsBody(it.body)
+            ToggleHint("收起", Icons.Default.ExpandLess)
         } else {
             val sum = it.summary.ifEmpty { bbPlain(it.body) }
             if (sum.isNotEmpty()) {
-                Text(
-                    if (sum.length > 160) sum.take(160) + "…" else sum, fontSize = 14.sp, lineHeight = 20.sp,
-                    modifier = Modifier.padding(top = 8.dp).clickable(onClick = toggle),
-                )
+                Text(if (sum.length > 160) sum.take(160) + "…" else sum, fontSize = 14.sp, lineHeight = 20.sp, modifier = Modifier.padding(top = 8.dp))
             }
+            ToggleHint("点一下展开全文", Icons.Default.ExpandMore)
         }
         (it.release ?: it.app?.takeIf { open })?.let { a -> AppCard(a, Modifier.padding(top = 12.dp)) }
-        Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            WishButton(it.release ?: it.app)
-            Spacer(Modifier.weight(1f))
-            Row(
-                Modifier.clip(RoundedCornerShape(50)).clickable(onClick = toggle).padding(horizontal = 10.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(if (open) "收起" else "展开全文", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
-                Icon(if (open) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+        val stats = listOfNotNull(it.votes.takeIf { v -> v > 0 }?.let { v -> "👍 $v" }, it.comments.takeIf { c -> c > 0 }?.let { c -> "💬 $c" }).joinToString("  ")
+        val wish = it.release ?: it.app
+        if (wish != null || stats.isNotEmpty()) {
+            Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                WishButton(wish)
+                Spacer(Modifier.weight(1f))
+                if (stats.isNotEmpty()) Text(stats, fontSize = 12.sp, maxLines = 1, softWrap = false, modifier = Modifier.padding(start = 8.dp))
             }
-            if (it.votes > 0 || it.comments > 0) Text("  👍 ${it.votes} · 💬 ${it.comments}", fontSize = 12.sp)
         }
-        if (it.comments > 0) NewsCommentsView(it)
+        // 评论区里点一下不收起（方便看和点链接）
+        if (it.comments > 0) {
+            Column(Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}) { NewsCommentsView(it) }
+        }
+    }
+}
+
+/** 摘要 / 正文下面的一行小字，提示点卡片就能展开或收起（整张卡片都能点，不用点准这一行）。 */
+@Composable
+private fun ToggleHint(text: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+        Text(text, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+        Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
     }
 }
 
@@ -463,27 +484,25 @@ private fun PriceLine(a: AppInfo) {
     val p = a.price
     val isNew = a.releaseTs > 0 && System.currentTimeMillis() / 1000 - a.releaseTs < 14 * 86400 && !a.comingSoon
     if (p == null && !a.free && !isNew) return
-    Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (isNew) {
-            Badge("新品", background = Tones.New)
-            Spacer(Modifier.width(6.dp))
-        }
+    // 放不下时整块换行，不把「≈ ¥」从中间挤断
+    FlowRow(
+        Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp),
+        itemVerticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (isNew) Badge("新品", background = Tones.New)
         if (p == null) {
             if (a.free) Text("免费", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            return@Row
+            return@FlowRow
         }
         if (p.pct > 0) {
             Text(
-                "-${p.pct}%", color = Color(0xFFBEEE11), fontWeight = FontWeight.Bold, fontSize = 13.sp,
+                "-${p.pct}%", color = Color(0xFFBEEE11), fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1,
                 modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(Color(0xFF4C6B22)).padding(horizontal = 6.dp, vertical = 1.dp),
             )
-            Spacer(Modifier.width(8.dp))
-            if (p.original.isNotEmpty()) {
-                Text(p.original, fontSize = 12.sp, textDecoration = TextDecoration.LineThrough, modifier = Modifier.padding(end = 6.dp))
-            }
+            if (p.original.isNotEmpty()) Text(p.original, fontSize = 12.sp, maxLines = 1, softWrap = false, textDecoration = TextDecoration.LineThrough)
         }
-        Text(p.final, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-        p.cny?.let { Text("  ≈ ¥" + String.format(java.util.Locale.ROOT, "%.2f", it), fontSize = 13.sp, color = MaterialTheme.colorScheme.primary) }
+        Text(p.final, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1, softWrap = false)
+        p.cny?.let { Text("≈ ¥" + String.format(java.util.Locale.ROOT, "%.2f", it), fontSize = 13.sp, maxLines = 1, softWrap = false, color = MaterialTheme.colorScheme.primary) }
     }
 }
 

@@ -849,7 +849,8 @@ class NewsFeed(val session: StoreSession, val store: NewsStore, private val cach
         return NewsItem(
             key = e.key, t = e.t, kind = "event", gid = e.gid,
             title = ev.optString("event_name").ifEmpty { body?.optString("headline") ?: "" },
-            summary = loc(jd.opt("localized_summary")) ?: "",
+            // 摘要只用简体 / 繁体中文的；只有英文摘要时用正文（正文按简体中文取）开头的一段
+            summary = (jd.opt("localized_summary") as? JSONArray)?.let { a -> listOf(6, 7).firstNotNullOfOrNull { i -> (a.opt(i) as? String)?.takeIf { it.isNotBlank() } } } ?: "",
             image = when {
                 capsule != null -> "$CLAN_CDN$clan/$capsule"
                 titleImg != null -> "$CLAN_CDN$clan/$titleImg"
