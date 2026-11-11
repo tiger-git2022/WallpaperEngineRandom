@@ -44,6 +44,12 @@ class ListView(val kind: Kind, val search: String = "", val author: String = "",
     var settled by mutableStateOf(false)
     var restored = false
 
+    /**
+     * 时间线：「以下是已经看过的」那条线的位置（发布时间），加载这个列表时定下来，之后不动；
+     * 往上翻看时阅读进度照常往上走，但线和分组要等下拉刷新才更新（像微博的「上次看到这里」）。
+     */
+    var dividerUpTo by mutableStateOf<Long?>(null)
+
     fun fresh() = ListView(kind, search, author, sortKey)
 }
 
@@ -540,6 +546,7 @@ class Workshop(val steam: Steam, val sub: Steam, val store: Store, private val s
             store.save()
             toast("从现在开始记录时间线的浏览进度")
         }
+        if (v.dividerUpTo == null) v.dividerUpTo = store.readUpTo
         // 一直加载到旧边界出现在列表里，未读数才准（最多大约 600 条）
         val last = items[v.ids.last()]
         if (!v.done && v.error == null && last != null && last.created > store.readUpTo && v.ids.size < 600) {

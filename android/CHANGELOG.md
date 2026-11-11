@@ -6,6 +6,11 @@ SteamWallpaper：在手机上浏览 Steam 上关注的作者的 Wallpaper Engine
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 最上面一节标了日期、合并到 main 后自动发布；标「未发布」时只编译。
 
+## [0.3.7] - 2026-11-11
+
+### 修复
+- 时间线「以下是已经看过的」那条线会跟着往上翻一直往上移：现在打开或下拉刷新时定下位置，没刷新前一直停在那里（像微博的「上次看到这里」）；未读数和 NEW 标记照常更新。
+
 ## [0.3.6] - 2026-11-10
 
 ### 改进
