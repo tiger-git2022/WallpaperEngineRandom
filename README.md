@@ -12,6 +12,19 @@ Wallpaper Engine 的托盘小工具：按每张壁纸的**添加时间**分档�
 - 系统要求：Windows 10 / 11，自带的 .NET Framework 4.8，不需要另外安装运行库。
 - 需要已经安装 Wallpaper Engine（Steam 版）。
 
+## 安卓 App：Steam信息流
+
+仓库里的 `android/` 是一个安卓 App「Steam信息流」（原来叫「Steam壁纸」，包名不变，可以直接覆盖安装，设置和登录都保留）：
+
+- **新闻**：和电脑版 [SteamNewsFeed](https://github.com/tiger-git2022/SteamNewsFeed) 一样，把 Steam 新闻中心的新闻流和
+  **关注的发行商 / 开发商新发售的游戏**合成一条时间线：阅读进度、「NEW」标签和「以下是已经看过的」分界线（规则和壁纸动态一样）、
+  点文章展开全文、评论直接显示、多个账号发的同一篇只显示一条、屏蔽游戏 / 账号、
+  游戏卡片（按账号商店地区的价格加人民币换算、评测等级 / 好评率 / 好评数、加入愿望单）、在浏览器打开。
+- **壁纸**：浏览 Steam 创意工坊里关注的作者的 Wallpaper Engine 壁纸、直接订阅（由电脑上的 Steam 下载）。
+
+新闻可以单独登录一个「新闻账号」（新闻设置里），和壁纸用的账号分开。登录在 Steam 官方的登录页里完成，账号密码不经过 App。安卓版单独发布在本仓库的 Releases 里（标签 `android-v版本号`），
+App 里可以检查更新；更新记录见 [android/CHANGELOG.md](android/CHANGELOG.md)。
+
 ## 开始 / 停止
 
 - **开始**：双击 `WERandom.exe`。程序会缩到屏幕右下角托盘（可能藏在 ^ 里），第一次运行会自动弹出设置窗口。

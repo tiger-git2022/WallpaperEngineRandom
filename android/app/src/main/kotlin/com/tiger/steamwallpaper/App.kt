@@ -29,6 +29,8 @@ class App : Application(), SingletonImageLoader.Factory {
         private set
     lateinit var updater: Updater
         private set
+    lateinit var news: NewsFeed
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -47,6 +49,9 @@ class App : Application(), SingletonImageLoader.Factory {
         val sub = Steam(cookieSource = { if (store.subAccount) SubProfile.cookieManager() else null }, client = steam.http)
         workshop = Workshop(steam, sub, store, scope)
         updater = Updater(this, steam.http, store, scope)
+        // 新闻：登录了新闻专用账号就用它（WebView 的另一个配置文件），否则用浏览账号
+        val newsStore = NewsStore(java.io.File(filesDir, "news.json"), scope)
+        news = NewsFeed(StoreSession(steam.http, scope) { if (newsStore.newsAccount) NewsProfile else null }, newsStore, java.io.File(cacheDir, "news_cache.json"), scope)
     }
 
     override fun newImageLoader(context: PlatformContext): ImageLoader = ImageLoader.Builder(context)
