@@ -22,7 +22,8 @@ sealed class BBlock {
     data object Rule : BBlock()
 }
 
-private val TAG = Regex("\\[(/?)([a-zA-Z0-9*]+)((?:=|\\s)[^\\]]*)?]")
+// 安卓的正则（ICU）里 { } [ ] 在字符组外也要转义
+private val TAG = Regex("\\[(/?)([a-zA-Z0-9*]+)((?:=|\\s)[^\\]]*)?\\]")
 private val IGNORED = Regex("^(c|color|size|font|align|center|left|right|pullquote|carousel|noparse|h\\d|i|b|u|p|img|video|previewyoutube|dynamiclink)$")
 
 fun safeUrl(u: String?): String? = u?.trim()?.trim('"', '\'')?.takeIf { Regex("^https?://", RegexOption.IGNORE_CASE).containsMatchIn(it) }
@@ -34,17 +35,17 @@ private fun attr(s: String, key: String): String {
 
 /** 正文去掉标签后的纯文字（摘要用）。 */
 fun bbPlain(src: String): String = src
-    .replace(Regex("\\{STEAM_CLAN_IMAGE}[^\\s\\[]*"), "")
-    .replace(Regex("\\[img[\\s\\S]*?\\[/img]", RegexOption.IGNORE_CASE), "")
-    .replace(Regex("\\[previewyoutube[\\s\\S]*?\\[/previewyoutube]", RegexOption.IGNORE_CASE), "")
-    .replace(Regex("\\[[^\\]]{1,80}]"), " ")
+    .replace(Regex("\\{STEAM_CLAN_IMAGE\\}[^\\s\\[]*"), "")
+    .replace(Regex("\\[img[\\s\\S]*?\\[/img\\]", RegexOption.IGNORE_CASE), "")
+    .replace(Regex("\\[previewyoutube[\\s\\S]*?\\[/previewyoutube\\]", RegexOption.IGNORE_CASE), "")
+    .replace(Regex("\\[[^\\]]{1,80}\\]"), " ")
     .replace(Regex("https?://\\S+"), "")
     .replace(Regex("\\s+"), " ")
     .trim()
 
 /** 正文里的第一张图（没有封面时用）。 */
 fun bbFirstImage(body: String): String {
-    val m = Regex("\\[img(?:[^\\]]*src=[\"']?([^\"'\\]\\s]+))?[^\\]]*]([^\\[]*)\\[/img]", RegexOption.IGNORE_CASE)
+    val m = Regex("\\[img(?:[^\\]]*src=[\"']?([^\"'\\]\\s]+))?[^\\]]*\\]([^\\[]*)\\[/img\\]", RegexOption.IGNORE_CASE)
         .find(body.replace("{STEAM_CLAN_IMAGE}", NewsFeed.CLAN_CDN.trimEnd('/'))) ?: return ""
     return safeUrl(m.groupValues[1].ifEmpty { m.groupValues[2] }) ?: ""
 }

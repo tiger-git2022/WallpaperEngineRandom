@@ -126,10 +126,9 @@ fun NewsPage() {
         }
     }
     // 打开时回到上次的位置：那一条还在就滚过去，否则停在「上次看到这里」
-    var restored by remember { mutableStateOf(false) }
     LaunchedEffect(feed.settled) {
-        if (!feed.settled || restored) return@LaunchedEffect
-        restored = true
+        if (!feed.settled || feed.restored) return@LaunchedEffect
+        feed.restored = true
         if (list.firstVisibleItemIndex > 1) return@LaunchedEffect
         val layout = layoutKeys(feed)
         val i = layout.indexOf(store.posKey).takeIf { it > 0 } ?: layout.indexOf("divider").takeIf { it > 0 }
@@ -138,7 +137,7 @@ fun NewsPage() {
     // 记下现在看到的位置（停下来 0.4 秒后）
     LaunchedEffect(feed) {
         snapshotFlow { list.firstVisibleItemIndex to list.firstVisibleItemScrollOffset }.collectLatest {
-            if (!restored) return@collectLatest
+            if (!feed.restored) return@collectLatest
             delay(400)
             val first = list.layoutInfo.visibleItemsInfo.firstOrNull { isEntryKey(it.key) && it.offset + it.size > 0 } ?: return@collectLatest
             store.posKey = first.key as String
@@ -268,7 +267,7 @@ private fun NewsCard(it: NewsItem) {
                 )
             }
         }
-        (it.release ?: it.app?.takeIf { _ -> open || it.release != null })?.let { a -> AppCard(a, Modifier.padding(top = 12.dp)) }
+        (it.release ?: it.app?.takeIf { open })?.let { a -> AppCard(a, Modifier.padding(top = 12.dp)) }
         Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             WishButton(it.release ?: it.app)
             Spacer(Modifier.weight(1f))

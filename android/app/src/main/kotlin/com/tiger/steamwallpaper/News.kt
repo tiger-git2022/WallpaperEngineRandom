@@ -169,6 +169,9 @@ class NewsFeed(val session: StoreSession, val store: NewsStore, private val cach
     var unread by mutableIntStateOf(0)
         private set
 
+    /** 已经回到过上次的位置（每次启动只做一次）。 */
+    var restored = false
+
     val wish = mutableStateMapOf<Int, Boolean>()
     val busy = mutableStateMapOf<String, Boolean>()
     val comments = mutableStateMapOf<String, NewsComments>()
