@@ -349,6 +349,32 @@ fun Pill(
 
 val PillShape = RoundedCornerShape(8.dp)
 
+/** 页面里的磨砂玻璃底（和页面上的 [Pill] 一样）：浅色主题半透明白加柔和阴影，深色主题淡白底加亮边。 */
+@Composable
+fun Modifier.frost(shape: androidx.compose.ui.graphics.Shape): Modifier {
+    val dark = isDark()
+    return (if (dark) this else shadow(3.dp, shape, ambientColor = Color.Black.copy(alpha = 0.25f), spotColor = Color.Black.copy(alpha = 0.25f)))
+        .clip(shape).background(if (dark) Color.White.copy(alpha = 0.1f) else Color.White.copy(alpha = 0.78f), shape)
+        .then(if (dark) Modifier.border(1.dp, Color.White.copy(alpha = 0.45f), shape) else Modifier)
+}
+
+/** 小的玻璃胶囊标签（游戏标签）。 */
+@Composable
+fun GlassTag(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text, fontSize = 12.sp, maxLines = 1, fontWeight = FontWeight.Medium,
+        modifier = modifier.frost(ButtonShape).padding(horizontal = 10.dp, vertical = 3.dp),
+    )
+}
+
+/** 圆形的玻璃图标按钮（在浏览器打开、更多）。 */
+@Composable
+fun GlassIconButton(icon: ImageVector, description: String, modifier: Modifier = Modifier, size: Dp = 34.dp, onClick: () -> Unit) {
+    Box(modifier.size(size).frost(CircleShape).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+        Icon(icon, contentDescription = description, modifier = Modifier.size(size * 0.55f))
+    }
+}
+
 /** 按钮（订阅、关注、检查更新……）：和 Material 按钮一样的圆头，样式是玻璃（同 [Pill]）。 */
 val ButtonShape = RoundedCornerShape(50)
 val ButtonHeight = 36.dp

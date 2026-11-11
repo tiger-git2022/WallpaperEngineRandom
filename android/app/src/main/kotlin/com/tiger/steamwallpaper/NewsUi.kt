@@ -191,15 +191,15 @@ private fun NewsHeader() {
     val scope = rememberCoroutineScope()
     Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp)) {
         PillRow {
-            Pill(if (feed.unread > 0) "全部 · ${if (feed.unread > 99) "99+" else feed.unread} 条未读" else "全部", onClick = { feed.setFilter("all") }, selected = store.filter == "all")
-            Pill("只看新发售", onClick = { feed.setFilter("release") }, selected = store.filter == "release")
+            Pill(if (feed.unread > 0) "全部 · ${if (feed.unread > 99) "99+" else feed.unread} 条未读" else "全部", onClick = { feed.setFilter("all") }, selected = store.filter == "all", shape = ButtonShape)
+            Pill("只看新发售", onClick = { feed.setFilter("release") }, selected = store.filter == "release", shape = ButtonShape)
             if (feed.dividerIndex() > 0) {
-                Pill("上次看到这里", leading = Icons.Default.VerticalAlignCenter, onClick = {
+                Pill("上次看到这里", shape = ButtonShape, leading = Icons.Default.VerticalAlignCenter, onClick = {
                     val i = layoutKeys(feed).indexOf("divider")
                     if (i > 0) scope.launch { feed.list.animateScrollToItem(i) }
                 })
             }
-            if (feed.unread > 0 && store.filter == "all") Pill("全部已读", leading = Icons.Default.DoneAll, onClick = { feed.markAllRead() })
+            if (feed.unread > 0 && store.filter == "all") Pill("全部已读", shape = ButtonShape, leading = Icons.Default.DoneAll, onClick = { feed.markAllRead() })
         }
     }
 }
@@ -277,7 +277,7 @@ private fun NewsCard(it: NewsItem) {
             if (sum.isNotEmpty()) {
                 Text(if (sum.length > 160) sum.take(160) + "…" else sum, fontSize = 14.sp, lineHeight = 20.sp, modifier = Modifier.padding(top = 8.dp))
             }
-            ToggleHint("点一下展开全文", Icons.Default.ExpandMore)
+            ToggleHint("展开全文", Icons.Default.ExpandMore)
         }
         (it.release ?: it.app?.takeIf { open })?.let { a -> AppCard(a, Modifier.padding(top = 12.dp)) }
         val stats = listOfNotNull(it.votes.takeIf { v -> v > 0 }?.let { v -> "👍 $v" }, it.comments.takeIf { c -> c > 0 }?.let { c -> "💬 $c" }).joinToString("  ")
@@ -299,9 +299,11 @@ private fun NewsCard(it: NewsItem) {
 /** 摘要 / 正文下面的一行小字，提示点卡片就能展开或收起（整张卡片都能点，不用点准这一行）。 */
 @Composable
 private fun ToggleHint(text: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
-    Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-        Text(text, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-        Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+    Box(Modifier.fillMaxWidth().padding(top = 8.dp), contentAlignment = Alignment.Center) {
+        Row(Modifier.frost(ButtonShape).padding(start = 14.dp, end = 10.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(text, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary)
+            Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+        }
     }
 }
 
@@ -343,11 +345,12 @@ private fun SourceRow(it: NewsItem) {
         }
         val url = if (it.kind == "release") it.release?.url ?: "" else it.url
         if (url.isNotEmpty()) {
-            Box(Modifier.size(36.dp).clip(CircleShape).clickable { openUrl(context, url) }, contentAlignment = Alignment.Center) {
-                Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "在浏览器中打开", modifier = Modifier.size(20.dp))
-            }
+            GlassIconButton(Icons.AutoMirrored.Filled.OpenInNew, "在浏览器中打开") { openUrl(context, url) }
         }
-        if (it.block.isNotEmpty()) BlockButton(it)
+        if (it.block.isNotEmpty()) {
+            Spacer(Modifier.width(8.dp))
+            BlockButton(it)
+        }
     }
 }
 
@@ -356,7 +359,7 @@ private fun BlockButton(it: NewsItem) {
     var bounds by remember { mutableStateOf(Rect.Zero) }
     val density = LocalDensity.current
     Box(
-        Modifier.size(36.dp).clip(CircleShape).onGloballyPositioned { c -> bounds = c.boundsInRoot() }.clickable {
+        Modifier.size(34.dp).frost(CircleShape).onGloballyPositioned { c -> bounds = c.boundsInRoot() }.clickable {
             // 菜单从按钮右边往左展开，不超出屏幕
             val w = with(density) { 250.dp.toPx() }
             val left = (bounds.right - w).coerceAtLeast(with(density) { 12.dp.toPx() })
@@ -368,7 +371,7 @@ private fun BlockButton(it: NewsItem) {
         },
         contentAlignment = Alignment.Center,
     ) {
-        Icon(Icons.Default.MoreHoriz, contentDescription = "屏蔽…", modifier = Modifier.size(22.dp))
+        Icon(Icons.Default.MoreHoriz, contentDescription = "屏蔽…", modifier = Modifier.size(20.dp))
     }
 }
 
@@ -436,12 +439,7 @@ private fun AppCard(a: AppInfo, modifier: Modifier = Modifier) {
             if (a.short.isNotEmpty()) Text(a.short, fontSize = 13.sp, lineHeight = 18.sp, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
             if (a.tags.isNotEmpty()) {
                 FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    a.tags.forEach { t ->
-                        Text(
-                            t, fontSize = 11.sp, maxLines = 1,
-                            modifier = Modifier.clip(RoundedCornerShape(5.dp)).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)).padding(horizontal = 7.dp, vertical = 2.dp),
-                        )
-                    }
+                    a.tags.forEach { t -> GlassTag(t) }
                 }
             }
             if (a.releaseTs > 0) Text("发售日期：" + dayText(a.releaseTs) + if (a.comingSoon) "（即将推出）" else "", fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))

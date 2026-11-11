@@ -127,7 +127,12 @@ fun parseBB(raw: String, link: Color, quote: Color, spoiler: Color): List<BBlock
             "dynamiclink" -> if (!close) {
                 val end = src.indexOf("[/dynamiclink]", last, ignoreCase = true)
                 if (end >= 0) last = end + "[/dynamiclink]".length
-                safeUrl(attr(m.value, "href"))?.let { u -> b.withLink(LinkAnnotation.Url(u, linkStyles)) { append(u) } }
+                // Steam 网页上是一张单独的商店卡片：这里单独占一行
+                safeUrl(attr(m.value, "href"))?.let { u ->
+                    newline(1)
+                    b.withLink(LinkAnnotation.Url(u, linkStyles)) { append(u) }
+                    newline(1)
+                }
             }
             "hr" -> if (!close) {
                 flush()
