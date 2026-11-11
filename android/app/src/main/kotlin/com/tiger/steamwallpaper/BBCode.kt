@@ -38,7 +38,9 @@ fun bbPlain(src: String): String = src
     .replace(Regex("\\{STEAM_CLAN_IMAGE\\}[^\\s\\[]*"), "")
     .replace(Regex("\\[img[\\s\\S]*?\\[/img\\]", RegexOption.IGNORE_CASE), "")
     .replace(Regex("\\[previewyoutube[\\s\\S]*?\\[/previewyoutube\\]", RegexOption.IGNORE_CASE), "")
-    .replace(Regex("\\[[^\\]]{1,80}\\]"), " ")
+    // 商店链接卡片、视频的标签里是很长的网址：整个去掉
+    .replace(Regex("\\[(dynamiclink|video)[^\\]]*\\][\\s\\S]*?\\[/(dynamiclink|video)\\]", RegexOption.IGNORE_CASE), " ")
+    .replace(Regex("\\[[^\\]]{1,400}\\]"), " ")
     .replace(Regex("https?://\\S+"), "")
     .replace(Regex("\\s+"), " ")
     .trim()

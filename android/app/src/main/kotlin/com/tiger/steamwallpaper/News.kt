@@ -1172,12 +1172,14 @@ class NewsFeed(val session: StoreSession, val store: NewsStore, private val cach
                     .replace(Regex("<img[^>]*alt=\"([^\"]*)\"[^>]*>"), "$1"),
                 Html.FROM_HTML_MODE_LEGACY,
             ).toString().trim()
-            val link = Regex("commentthread_author_link\"[^>]*href=\"([^\"]+)\"|href=\"([^\"]+)\"[^>]*class=\"[^\"]*commentthread_author_link").find(part)
+            // 作者链接的 class 后面可能跟着别的 class 和空格；名字的 <bdi> 里还套着一个下拉菜单的 <span>
+            val link = Regex("commentthread_author_link[^\"]*\"[^>]*href=\"([^\"]+)\"|href=\"([^\"]+)\"[^>]*class=\"[^\"]*commentthread_author_link").find(part)
             val url = link?.let { it.groupValues[1].ifEmpty { it.groupValues[2] } } ?: ""
-            val name = Regex("commentthread_author_link\"[^>]*>\\s*<bdi>(.*?)</bdi>", RegexOption.DOT_MATCHES_ALL).find(part)?.groupValues?.get(1)
+            val name = Regex("commentthread_author_link[^\"]*\"[^>]*>\\s*<bdi>(.*?)</bdi>", RegexOption.DOT_MATCHES_ALL).find(part)?.groupValues?.get(1)
                 ?.let { Html.fromHtml(it, Html.FROM_HTML_MODE_LEGACY).toString().trim() } ?: ""
-            val head = part.substringBefore("commentthread_comment_content")
-            val avatar = Regex("<img (?:src|srcset)=\"([^\"\\s]+)").findAll(head).map { it.groupValues[1] }.firstOrNull { "avatar" in it } ?: ""
+            // 头像在名字前面那个带 data-miniprofile 的链接里（外面那张是头像框）
+            val head = part.substringBefore("author_name_group")
+            val avatar = Regex("data-miniprofile=\"\\d+\"[^>]*>\\s*<img (?:src|srcset)=\"([^\"\\s]+)").find(head)?.groupValues?.get(1) ?: ""
             val time = Regex("data-timestamp=\"(\\d+)\"").find(part)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
             NewsComment(id, name.ifEmpty { "（匿名）" }, url.takeIf { it.startsWith("http") } ?: "", avatar, time, text)
         }
