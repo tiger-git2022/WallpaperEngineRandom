@@ -456,12 +456,12 @@ private fun TabBar(modifier: Modifier) {
                         else -> 0
                     }
                     if (badge > 0) {
-                        // 角标放在图标右边、和图标居中对齐：不盖住图标，也不会被标签的圆角裁掉
+                        // 角标压在图标右上角：四个标签时每个标签比较窄，放在图标右边会超出选中高亮的圆头
                         Text(
                             if (badge > 99) "99+" else badge.toString(),
                             color = androidx.compose.ui.graphics.Color.White, fontSize = 10.sp, lineHeight = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1,
-                            modifier = Modifier.align(Alignment.CenterStart).offset(x = 27.dp)
-                                .wrapContentSize(Alignment.CenterStart, unbounded = true)
+                            modifier = Modifier.align(Alignment.TopStart).offset(x = 15.dp, y = (-5).dp)
+                                .wrapContentSize(Alignment.TopStart, unbounded = true)
                                 .clip(CircleShapeR).background(Tones.New).padding(horizontal = 5.dp, vertical = 1.dp),
                         )
                     }

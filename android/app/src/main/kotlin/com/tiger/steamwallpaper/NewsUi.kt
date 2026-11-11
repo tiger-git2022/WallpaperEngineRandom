@@ -281,7 +281,7 @@ private fun NewsCard(it: NewsItem) {
             ToggleHint("展开全文", Icons.Default.ExpandMore)
         }
         (it.release ?: it.app?.takeIf { open })?.let { a -> AppCard(a, Modifier.padding(top = 12.dp)) }
-        val stats = listOfNotNull(it.votes.takeIf { v -> v > 0 }?.let { v -> "👍 $v" }, it.comments.takeIf { c -> c > 0 }?.let { c -> "💬 $c" }).joinToString("  ")
+        val stats = listOfNotNull(it.votes.takeIf { v -> v > 0 }?.let { v -> "👍 $v" }, maxOf(it.comments, feed.comments[it.key]?.total ?: 0).takeIf { c -> c > 0 }?.let { c -> "💬 $c" }).joinToString("  ")
         val wish = it.release ?: it.app
         if (wish != null || stats.isNotEmpty()) {
             Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
