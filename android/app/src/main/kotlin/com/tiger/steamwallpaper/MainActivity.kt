@@ -69,6 +69,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -235,21 +237,38 @@ private fun TopBar(modifier: Modifier, onAccount: () -> Unit) {
         if (author != null) {
             GlassCircle(onClick = { ws.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回") }
             Spacer(Modifier.width(10.dp))
-            Row(
-                Modifier.weight(1f).fillMaxHeight().glassClip(CircleShapeR, MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = GLASS_BAR_TINT), GlassStyle.Panel)
-                    .padding(horizontal = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Avatar(authorAvatar(author.steamId), 38.dp)
-                Column(Modifier.padding(horizontal = 10.dp)) {
-                    Text(ws.store.profiles[author.steamId]?.name?.ifEmpty { null } ?: "作者", fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(author.view.total?.let { "$it 个作品" } ?: "正在读取…", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            val name = ws.store.profiles[author.steamId]?.name?.ifEmpty { null }
+            if (author.searching) {
+                // 在这个作者的作品里搜索：本地筛选，边输边搜；关掉搜索框就清空
+                SearchField(
+                    Modifier.weight(1f), value = author.query, onValueChange = { author.query = it },
+                    hint = if (name != null) "搜索 $name 的作品" else "搜索 TA 的作品", focusedHint = "标题、标签或简介里的词",
+                    showClear = true, onClear = { author.searching = false; author.query = "" }, autoFocus = true,
+                )
+            } else {
+                Row(
+                    Modifier.weight(1f).fillMaxHeight().glassClip(CircleShapeR, MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = GLASS_BAR_TINT), GlassStyle.Panel)
+                        .padding(horizontal = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Avatar(authorAvatar(author.steamId), 38.dp)
+                    Column(Modifier.padding(horizontal = 10.dp)) {
+                        Text(name ?: "作者", fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(author.view.total?.let { "$it 个作品" } ?: "正在读取…", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                    }
                 }
+                Spacer(Modifier.width(10.dp))
+                GlassCircle(onClick = { author.searching = true }) { Icon(Icons.Default.Search, contentDescription = "搜索这个作者的作品") }
             }
         } else if (ws.store.tab == "news") {
             NewsBar(Modifier.weight(1f))
         } else {
-            SearchField(Modifier.weight(1f))
+            SearchField(
+                Modifier.weight(1f), value = ws.query, onValueChange = { ws.query = it },
+                hint = "搜索创意工坊壁纸", focusedHint = "输入关键词，回车搜索",
+                onSearch = { ws.submitSearch() },
+                showClear = ws.query.isNotEmpty() || ws.search.isNotEmpty(), onClear = { ws.clearSearch() },
+            )
         }
         Spacer(Modifier.width(10.dp))
         GlassCircle(onClick = onAccount) {
@@ -262,10 +281,22 @@ private fun TopBar(modifier: Modifier, onAccount: () -> Unit) {
 private val CircleShapeR = RoundedCornerShape(50)
 
 @Composable
-private fun SearchField(modifier: Modifier) {
+private fun SearchField(
+    modifier: Modifier,
+    value: String,
+    onValueChange: (String) -> Unit,
+    hint: String,
+    focusedHint: String,
+    showClear: Boolean,
+    onClear: () -> Unit,
+    onSearch: () -> Unit = {},
+    autoFocus: Boolean = false,
+) {
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     var focused by remember { mutableStateOf(false) }
+    val requester = remember { FocusRequester() }
+    if (autoFocus) LaunchedEffect(Unit) { requester.requestFocus() }
     val onSurface = MaterialTheme.colorScheme.onSurface
     Row(
         modifier.fillMaxHeight().glassClip(CircleShapeR, MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = GLASS_BAR_TINT), GlassStyle.Control)
@@ -275,26 +306,26 @@ private fun SearchField(modifier: Modifier) {
         Icon(Icons.Default.Search, contentDescription = null, tint = onSurface)
         Spacer(Modifier.width(10.dp))
         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-            if (ws.query.isEmpty()) {
-                Text(if (focused) "输入关键词，回车搜索" else "搜索创意工坊壁纸", color = onSurface.copy(alpha = 0.75f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (value.isEmpty()) {
+                Text(if (focused) focusedHint else hint, color = onSurface.copy(alpha = 0.75f), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             BasicTextField(
-                value = ws.query,
-                onValueChange = { ws.query = it },
+                value = value,
+                onValueChange = onValueChange,
                 singleLine = true,
                 textStyle = TextStyle(color = onSurface, fontSize = 16.sp),
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = {
-                    ws.submitSearch()
+                    onSearch()
                     keyboard?.hide()
                     focus.clearFocus()
                 }),
-                modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused },
+                modifier = Modifier.fillMaxWidth().focusRequester(requester).onFocusChanged { focused = it.isFocused },
             )
         }
-        if (ws.query.isNotEmpty() || ws.search.isNotEmpty()) {
-            Box(Modifier.size(40.dp).clip(CircleShape).clickable { ws.clearSearch(); focus.clearFocus() }, contentAlignment = Alignment.Center) {
+        if (showClear) {
+            Box(Modifier.size(40.dp).clip(CircleShape).clickable { onClear(); focus.clearFocus() }, contentAlignment = Alignment.Center) {
                 Icon(Icons.Default.Close, contentDescription = "清除搜索", tint = onSurface)
             }
         }
