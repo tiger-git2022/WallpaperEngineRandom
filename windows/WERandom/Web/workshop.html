@@ -1438,10 +1438,11 @@ function toggleComments(a) {
 // cover from Steam. "保留这个": unsubscribe the others (subscribing account), move them on the devices to wer_trash,
 // and put the kept one on that device's "to send with WE" list.
 const dupe = { applied: null, data: null, loading: false, text: '', error: null, devices: null, devError: null, removed: new Set(), shown: 20, groups: [] };
-function dcfg() { return S.dupe = Object.assign({ min: 0.75, addrs: [], ignore: [], send: {}, onlyDevice: false }, S.dupe || {}); }
+function dcfg() { return S.dupe = Object.assign({ min: 0.75, addrs: [], ignore: [], never: [], send: {}, onlyDevice: false }, S.dupe || {}); }
 const pairKey = (a, b) => a < b ? a + '|' + b : b + '|' + a;
 const onDevices = id => (dupe.devices || []).filter(d => d.ids.includes(id));
 const dupeTitle = it => it.title || (items.get(it.id) || {}).title || it.id;
+const dupeName = id => (items.get(id) || {}).title || (dupe.data && (dupe.data.items.find(x => x.id === id) || {}).title) || id;
 
 async function loadDevices() {
   const c = dcfg();
@@ -1493,7 +1494,8 @@ function dupeAlive(it) {
 function buildGroups() {
   const d = dupe.data; if (!d) return [];
   const c = dcfg(), ign = new Set(c.ignore), min = Math.round(c.min * 1000);
-  const ok = (a, b) => dupeAlive(d.items[a]) && dupeAlive(d.items[b]) && !ign.has(pairKey(d.items[a].id, d.items[b].id));
+  const never = new Set(c.never);   // "永不对比": never compared with anything
+  const ok = (a, b) => dupeAlive(d.items[a]) && dupeAlive(d.items[b]) && !never.has(d.items[a].id) && !never.has(d.items[b].id) && !ign.has(pairKey(d.items[a].id, d.items[b].id));
   // every two in a group must be similar enough (complete linkage). Joining by single pairs chained look-alikes
   // (A~B, B~C, C~D…) into one group of hundreds where most are not alike at all.
   const n = d.items.length, near = new Set(), key = (a, b) => a < b ? a * n + b : b * n + a;
@@ -1540,14 +1542,17 @@ function renderDupes(keepScroll) {
       + (dupe.devError ? `<span style="color:var(--danger)">${esc(dupe.devError)}</span>` : '');
   const sends = Object.entries(c.send).filter(([, ids]) => ids.length);
   const sendHtml = sends.map(([model, ids]) => `<div class="sendbox"><div class="h"><span>要用 Wallpaper Engine 发到「${esc(model)}」的壁纸（${ids.length} 个）</span><span class="grow"></span><button data-dcopy="${esc(model)}">复制标题</button><button data-dsent="${esc(model)}">都发好了</button></div>
-      <div>${ids.map(id => `<span class="it" title="${id}">${esc((items.get(id) || {}).title || (dupe.data && (dupe.data.items.find(x => x.id === id) || {}).title) || id)}<a data-dunsend="${esc(model)}|${id}" title="从列表里去掉">×</a></span>`).join('')}</div>
-      <div class="dnote" style="margin:4px 0 0">在电脑上的 Wallpaper Engine 里选中这些壁纸，用「发送到手机」发过去。设备上有了以后，下次读取设备时会自动从列表里去掉。</div></div>`).join('');
+      <div>${ids.map(id => `<span class="it" title="${id}">${esc(dupeName(id))}<a data-dunsend="${esc(model)}|${id}" title="从列表里去掉">×</a></span>`).join('')}</div>
+      <div class="dnote" style="margin:4px 0 0">在电脑上的 Wallpaper Engine 里选中这些壁纸，用「发送到手机」发过去。设备上有了以后，下次读取设备时会自动从列表里去掉。</div></div>`).join('')
+    + (dupe.showNever && c.never.length ? `<div class="sendbox"><div class="h"><span>永不对比的壁纸（${c.never.length} 个）</span><span class="grow"></span><button data-dunnever="*">全部恢复</button><button data-dnevlist>收起</button></div>
+      <div>${c.never.map(id => `<span class="it" title="${id}">${esc(dupeName(id))}<a data-dunnever="${id}" title="恢复：以后又和其他壁纸比较">×</a></span>`).join('')}</div></div>` : '');
   const total = dupe.data ? dupe.data.items.length : 0;
   const compact = document.body.classList.contains('compact');
   $('#mainhead').innerHTML = `<div class="dbar"><button class="primary" data-dscan${dupe.loading ? ' disabled' : ''}>${dupe.data ? '重新查找' : '开始查找'}</button>
       <button data-dcompact title="${compact ? '回到原来的窗口' : '窗口缩到屏幕右边并置顶，只留查重；点「应用」后直接看桌面对比'}">${compact ? '退出小窗' : '小窗对比'}</button>
       <label title="越往右越严格：只有几乎一样的才算一组；往左会把同一个人物的不同动作也算进来，但也更容易把画风相近的不同人物算进来">相似度 <input type="range" id="dmin" min="0.65" max="0.99" step="0.01" value="${c.min}"> <span class="num" id="dminv">${Math.round(c.min * 100)}%</span></label>
       <label><input type="checkbox" id="donly"${c.onlyDevice ? ' checked' : ''}> 只看平板 / 手机上有的</label>
+      ${c.never.length ? `<button class="ghost" data-dnevlist title="这些壁纸不和任何壁纸比较；点开可以恢复">永不对比（${c.never.length}）</button>` : ''}
       <span id="dstatus"></span><span class="grow" style="flex:1"></span>
       ${dupe.data ? `<span>${total} 个壁纸，${dupe.groups.length} 组相似</span>` : ''}</div>
     <div class="devs">${devHtml}<button class="ghost" data-ddev>读取设备</button><input id="daddr" placeholder="无线 adb 地址，如 192.168.1.20:5555" value="${esc(c.addrs.join(', '))}" title="每次读取设备前先连接这些地址（多个用逗号分开）"></div>`;
@@ -1604,7 +1609,7 @@ function dupeTileHtml(it, gi, g) {
     <div class="s">${by || '&nbsp;'}</div><div class="s">${info || '&nbsp;'}</div>
     <div class="where">${where}</div>
     <div class="acts"><button data-dapply="${it.id}" class="${on ? 'on' : ''}"${here ? ' title="放到电脑桌面上看效果，再点同组的另一个来对比"' : ' disabled title="这台电脑上没有，没法应用"'}>${on ? '✓ 桌面上' : '应用'}</button><button class="mark" data-dcancel="${gi}|${it.id}" title="取消订阅这个，从平板 / 手机挪走；这组其余的保留">取消这个</button></div>
-    <div class="links"><a data-ddetail="${it.id}">详情</a><a data-dout="${gi}|${it.id}" title="它和这组的其他壁纸不是同一个">移出这组</a></div></div>`;
+    <div class="links"><a data-ddetail="${it.id}">详情</a><a data-dout="${gi}|${it.id}" title="它和这组的其他壁纸不是同一个">移出这组</a><a data-dnever="${it.id}" title="确定它不会和任何壁纸重复：以后不再和其他壁纸比较（顶部「永不对比」里可以恢复）">永不对比</a></div></div>`;
 }
 function ask(html, okText) {
   return new Promise(res => {
@@ -1679,6 +1684,11 @@ document.addEventListener('click', async e => {
   if (out) { const [gi, id] = out.dataset.dout.split('|'); const g = dupe.groups[+gi]; const c = dcfg(); for (const x of g) if (x.id !== id) c.ignore.push(pairKey(id, x.id)); save(); renderDupes(true); return; }
   const not = t.closest('[data-dnot]');
   if (not) { const g = dupe.groups[+not.dataset.dnot]; const c = dcfg(); for (const a of g) for (const b of g) if (a.id < b.id) c.ignore.push(pairKey(a.id, b.id)); save(); renderDupes(true); return; }
+  const nev = t.closest('[data-dnever]');
+  if (nev) { const c = dcfg(); if (!c.never.includes(nev.dataset.dnever)) c.never.push(nev.dataset.dnever); save(); renderDupes(true); return; }
+  const unnev = t.closest('[data-dunnever]');
+  if (unnev) { const c = dcfg(), id = unnev.dataset.dunnever; c.never = id === '*' ? [] : c.never.filter(x => x !== id); if (!c.never.length) dupe.showNever = false; save(); renderDupes(true); return; }
+  if (t.closest('[data-dnevlist]')) { dupe.showNever = !dupe.showNever; renderDupes(true); return; }
   const sent = t.closest('[data-dsent]'); if (sent) { delete dcfg().send[sent.dataset.dsent]; save(); renderDupes(true); return; }
   const un = t.closest('[data-dunsend]'); if (un) { const [model, id] = un.dataset.dunsend.split('|'); const c = dcfg(); c.send[model] = (c.send[model] || []).filter(x => x !== id); if (!c.send[model].length) delete c.send[model]; save(); renderDupes(true); return; }
   const cp = t.closest('[data-dcopy]');
