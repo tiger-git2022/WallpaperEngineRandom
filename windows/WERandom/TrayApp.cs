@@ -701,8 +701,30 @@ public class TrayApp : ApplicationContext
 	// ---- 检查更新 ----
 
 	private UpdateInfo _update;        // 已发现的新版本
-	private string _updateStatus;      // 正在检查/下载时显示在托盘菜单里
+	private string _updateStatusValue;
 	private string _notifiedVersion;   // 已经弹过提示的版本，同一版本只提示一次
+
+	/// <summary>正在检查/下载时显示在托盘菜单和主界面里；变化时通知主界面。</summary>
+	private string _updateStatus
+	{
+		get => _updateStatusValue;
+		set { _updateStatusValue = value; UpdateStateChanged?.Invoke(); }
+	}
+
+	/// <summary>检查更新的状态变了（开始/结束检查、下载进度）。</summary>
+	public event Action UpdateStateChanged;
+
+	/// <summary>正在检查或下载时的文字，空闲时为 null。</summary>
+	public string UpdateStatus => _updateStatus;
+
+	/// <summary>已发现的新版本号，没有时为 null。</summary>
+	public string AvailableVersion => _update?.Version;
+
+	/// <summary>主界面的「检查更新」按钮：和托盘菜单一样，结果都告诉用户。</summary>
+	public void CheckUpdatesNow()
+	{
+		_sync.BeginInvoke((Action)(async () => await CheckUpdates(manual: true)));
+	}
 	private System.Windows.Forms.Timer _updateTimer;
 
 	/// <summary>启动 30 秒后检查一次，之后每 12 小时检查一次；发现新版本时托盘弹出提示。</summary>
