@@ -67,6 +67,23 @@ data class Me(val loggedIn: Boolean = false, val steamId: String = "", val name:
 /** 作者页（从标签页或别的作者页打开，返回键回到上一层）。 */
 class AuthorScreen(val steamId: String) {
     var view by mutableStateOf(ListView(Kind.Author, author = steamId))
+
+    /** 顶栏换成了搜索框。 */
+    var searching by mutableStateOf(false)
+
+    /**
+     * 在这个作者的作品里搜索的关键词（边输边筛）。作者网页不支持搜索，所以在本地按标题、标签和简介匹配；
+     * 有关键词时列表会自动把作者的作品全部读完。
+     */
+    var query by mutableStateOf("")
+}
+
+/** 作者页的本地搜索：空格分开的每个词都要在标题、标签或简介里出现（不分大小写）。 */
+fun Item.matches(query: String): Boolean {
+    val words = query.trim().split(' ', '　', '\t').filter { it.isNotEmpty() }
+    if (words.isEmpty()) return true
+    val text = (listOf(title, short, description.orEmpty()) + tags).joinToString("\n")
+    return words.all { text.contains(it, ignoreCase = true) }
 }
 
 /**
@@ -390,6 +407,8 @@ class Workshop(val steam: Steam, val sub: Steam, val store: Store, private val s
 
     fun back(): Boolean {
         if (stack.isEmpty()) return false
+        // 先收起搜索框，再返回上一层
+        stack.last().let { if (it.searching) { it.searching = false; it.query = ""; return true } }
         stack.removeAt(stack.lastIndex)
         return true
     }

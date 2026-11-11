@@ -58,9 +58,11 @@ import androidx.compose.ui.unit.sp
 
 /** 浏览 / 搜索页和作者页用的网格。 */
 @Composable
-private fun ItemGrid(v: ListView, header: @Composable () -> Unit, filter: Boolean, unsubscribedOnly: Boolean = false) {
+private fun ItemGrid(v: ListView, header: @Composable (shown: Int) -> Unit, filter: Boolean, unsubscribedOnly: Boolean = false, query: String = "") {
     val pad = LocalContentPadding.current
-    val shown = v.ids.mapNotNull { ws.items[it] }.filter { (!filter || ws.store.passesFilters(it)) && (!unsubscribedOnly || !ws.isSubscribed(it.id)) }
+    val shown = v.ids.mapNotNull { ws.items[it] }.filter {
+        (!filter || ws.store.passesFilters(it)) && (!unsubscribedOnly || !ws.isSubscribed(it.id)) && it.matches(query)
+    }
     // 打开详情后可以左右滑动，按页面上的顺序切换
     val ids = shown.map { it.id }
     // 快滚到底就加载下一页。加载状态也算在条件里：一页读完、筛选后还是不够一屏（比如这页全订阅了），会接着读下一页
@@ -82,9 +84,15 @@ private fun ItemGrid(v: ListView, header: @Composable () -> Unit, filter: Boolea
             verticalArrangement = Arrangement.spacedBy(14.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
-            full("head") { header() }
+            full("head") { header(shown.size) }
             if (!v.loading && v.error == null && v.done && shown.isEmpty()) {
-                full("empty") { EmptyState(if (v.ids.isNotEmpty()) "筛选条件下没有作品" else "没有找到壁纸", if (v.ids.isNotEmpty()) "试试清除筛选。" else "换个关键词或筛选条件试试。") }
+                full("empty") {
+                    when {
+                        query.isNotBlank() && v.ids.isNotEmpty() -> EmptyState("没有找到「${query.trim()}」", "标题、标签和简介里都没有，换个关键词或清除筛选试试。")
+                        v.ids.isNotEmpty() -> EmptyState("筛选条件下没有作品", "试试清除筛选。")
+                        else -> EmptyState("没有找到壁纸", "换个关键词或筛选条件试试。")
+                    }
+                }
             }
             items(shown, key = { it.id }) { Tile(it, v, ids) }
             full("more") { MoreFooter(v) }
@@ -161,18 +169,32 @@ private fun FilterChipButton(onFilter: () -> Unit) {
 @Composable
 fun AuthorPage(s: AuthorScreen, onFilter: () -> Unit) {
     val v = s.view
-    ItemGrid(v, header = {
-        // 固定一行，不换行（字大放不下时可以左右滑）
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 2.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
-        ) {
-            FollowButton(s.steamId)
-            val only = ws.store.unsubscribedOnly
-            Pill("只看未订阅", onClick = { ws.store.unsubscribedOnly = !only; ws.store.save() }, selected = only, leading = if (only) Icons.Default.Check else null)
-            FilterChipButton(onFilter)
+    val q = s.query.trim()
+    // 换了关键词回到顶部
+    LaunchedEffect(q) { if (q.isNotEmpty()) v.grid.scrollToItem(0) }
+    ItemGrid(v, header = { found ->
+        Column {
+            // 固定一行，不换行（字大放不下时可以左右滑）
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
+            ) {
+                FollowButton(s.steamId)
+                val only = ws.store.unsubscribedOnly
+                Pill("只看未订阅", onClick = { ws.store.unsubscribedOnly = !only; ws.store.save() }, selected = only, leading = if (only) Icons.Default.Check else null)
+                FilterChipButton(onFilter)
+            }
+            if (q.isNotEmpty()) {
+                // 作者网页不能搜索，要把作品全部读完才知道有几个
+                val more = if (!v.done && v.error == null) "（已查 ${v.ids.size}${v.total?.let { " / $it" } ?: ""} 个，正在读剩下的…）" else ""
+                Text(
+                    "搜索「$q」：找到 $found 个$more",
+                    fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 6.dp, top = 8.dp),
+                )
+            }
         }
-    }, filter = true, unsubscribedOnly = ws.store.unsubscribedOnly)
+    }, filter = true, unsubscribedOnly = ws.store.unsubscribedOnly, query = q)
 }
 
 /** 关注的作者。 */
