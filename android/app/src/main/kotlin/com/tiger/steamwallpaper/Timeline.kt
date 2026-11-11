@@ -88,8 +88,10 @@ fun TimelinePage() {
     val v = ws.timeline ?: return
     val store = ws.store
     val shown = v.ids.mapNotNull { ws.items[it] }
-    val posts = groupPosts(shown, store.readUpTo, store.mergePosts)
-    val b = ws.boundaryIndex(v)
+    // 分隔线和分组按加载时定下的位置，不跟着阅读进度动（下拉刷新才更新）
+    val upTo = v.dividerUpTo ?: store.readUpTo
+    val posts = groupPosts(shown, upTo, store.mergePosts)
+    val b = v.ids.indexOfFirst { (ws.items[it]?.created ?: 0) <= upTo }.let { if (it < 0) v.ids.size else it }
     val hasDivider = b > 0 && b < v.ids.size
     val dividerAt = if (hasDivider) posts.indexOfFirst { it.read }.takeIf { it >= 0 } else null
     val pad = LocalContentPadding.current
@@ -150,7 +152,7 @@ fun TimelinePage() {
             }
             posts.forEachIndexed { i, post ->
                 if (i == dividerAt) {
-                    item("divider") { ReadDivider(store.readUpTo) }
+                    item("divider") { ReadDivider(upTo) }
                 }
                 item("p:" + post.items[0].id) {
                     if (post.items.size == 1) SinglePost(post.items[0], post.read) else GroupPost(post)
