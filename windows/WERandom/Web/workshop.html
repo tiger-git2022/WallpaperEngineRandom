@@ -280,9 +280,14 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .dg .gh .grow { flex: 1; }
 .dg .gh a { color: var(--fg3); font-size: 12px; }
 .dgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
-.dt { border-radius: 6px; padding: 6px; margin: -6px; }
+/* tiles of a group are equally tall (grid rows stretch); the space a shorter name leaves goes between the name and the
+   details, so details, badges and buttons line up at the bottom */
+.dt { border-radius: 6px; padding: 6px; margin: -6px; display: flex; flex-direction: column; }
+.dt .t + .s { margin-top: auto; padding-top: 4px; }
 .dt:hover { background: var(--hover); }
-.dt .thumb img { object-fit: contain; cursor: zoom-in; }
+.dt { cursor: pointer; }
+.dt.sel { background: var(--hover); outline: 2px solid var(--accent); }
+.dt .thumb img { object-fit: contain; }
 .dt .t { margin-top: 6px; font-weight: 600; white-space: normal; overflow-wrap: anywhere; line-height: 1.35; }
 .dt .acts button.mark { flex: 1; }
 
@@ -301,6 +306,26 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .dt .links { display: flex; gap: 14px; margin-top: 6px; font-size: 12px; }
 .dt .links a { color: var(--fg3); }
 .dt .links a:hover { color: var(--accent); }
+/* 查重的小窗：只剩查重本身（窗口那边也去掉了左边的导航） */
+body.compact #top, body.compact #filters, body.compact #detail, body.compact #split, body.compact .dt .links { display: none !important; }
+/* the hidden columns take no grid cell, so the list is the only item: one column (with "0 1fr 0" it landed in the 0-wide one) */
+body.compact #body, body.compact #body.nofilters, body.compact #body.nodetail { grid-template-columns: minmax(0, 1fr) !important; }
+body.compact .dt { cursor: default; }
+/* narrow small window: no device row, tighter edges, one tile per row from 240px up */
+body.compact #mainhead .devs { display: none; }
+body.compact #mainhead { padding: 0 10px 8px; }
+body.compact #main { padding: 4px 10px 20px; }
+body.compact .dg { padding: 10px; }
+body.compact .dgrid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 180px), 1fr)); }
+body.compact .dnav .dhint { display: none; }
+.dbar label, .dnav span { white-space: nowrap; }
+body.compact .dbar label:has(#dmin) { flex: 1 1 auto; min-width: 0; }
+body.compact #dmin { width: auto; flex: 1 1 auto; min-width: 50px; }
+body.compact .dnav { gap: 6px; }
+body.compact .dnav button { padding: 4px 8px; }
+.dnav { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.dnav span { color: var(--fg2); font-variant-numeric: tabular-nums; }
+.dnav .dhint { color: var(--fg3); font-size: 12px; margin-left: auto; }
 #ask { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: center; justify-content: center; z-index: 30; }
 #ask.on { display: flex; }
 #ask .box { background: var(--solid); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 32px var(--shadow); padding: 18px 20px; width: 520px; max-width: 92vw; max-height: 80vh; overflow: auto; }
@@ -1094,7 +1119,7 @@ function followButton(id) {
   };
   return b;
 }
-async function loadFollows() { if (!me.loggedIn) return; try { S.follows = await host.call('following'); save(); ensureProfiles(S.follows); if (!current) renderFollowing(); } catch (e) { } }
+async function loadFollows() { if (!me.loggedIn) return; try { S.follows = await host.call('following'); save(); ensureProfiles(S.follows); if (!current && S.tab === 'following') renderFollowing(); } catch (e) { } }
 let profileQueue = new Set(), profileTimer = 0;
 function ensureProfiles(ids) {
   const week = Date.now() - 7 * 86400e3;
@@ -1444,16 +1469,21 @@ async function scanDupes() {
   loadDupeDetails();
 }
 // Steam details (title of device-only ones, author, publish date) for the wallpapers in the groups
+// only for the groups on screen (renderDupes calls this each time: more groups shown, slider moved); each batch of
+// 100 is drawn as soon as it arrives, so authors and dates fill in instead of staying empty until all are read
+const dupeAsked = new Set();
 async function loadDupeDetails() {
-  const ids = [...new Set(dupe.groups.flat().map(x => x.id))].filter(id => !items.has(id));
+  const shown = (document.body.classList.contains('compact') ? dupe.groups.slice(dupe.cur || 0, (dupe.cur || 0) + 3) : dupe.groups.slice(0, dupe.shown)).flat();
+  ensureProfiles([...new Set(shown.map(x => (items.get(x.id) || {}).creator).filter(Boolean))]);
+  const ids = [...new Set(shown.map(x => x.id))].filter(id => !items.has(id) && !dupeAsked.has(id));
+  ids.forEach(id => dupeAsked.add(id));
   for (let i = 0; i < ids.length; i += 100) {
     try {
       const r = await host.call('details', { ids: ids.slice(i, i + 100) });
       for (const f of (r.response || {}).publishedfiledetails || []) if (+f.result === 1) remember(f);
-    } catch (e) { }
+    } catch (e) { ids.slice(i, i + 100).forEach(id => dupeAsked.delete(id)); }
+    if (S.tab === 'dupes' && !current) renderDupes(true);
   }
-  ensureProfiles([...new Set(dupe.groups.flat().map(x => (items.get(x.id) || {}).creator).filter(Boolean))]);
-  if (S.tab === 'dupes' && !current) renderDupes(true);
 }
 // a PC wallpaper that is gone from this PC (unsubscribed, Steam deleted the folder) and from the devices drops out
 function dupeAlive(it) {
@@ -1498,7 +1528,9 @@ function renderDupes(keepScroll) {
       <div>${ids.map(id => `<span class="it" title="${id}">${esc((items.get(id) || {}).title || (dupe.data && (dupe.data.items.find(x => x.id === id) || {}).title) || id)}<a data-dunsend="${esc(model)}|${id}" title="从列表里去掉">×</a></span>`).join('')}</div>
       <div class="dnote" style="margin:4px 0 0">在电脑上的 Wallpaper Engine 里选中这些壁纸，用「发送到手机」发过去。设备上有了以后，下次读取设备时会自动从列表里去掉。</div></div>`).join('');
   const total = dupe.data ? dupe.data.items.length : 0;
+  const compact = document.body.classList.contains('compact');
   $('#mainhead').innerHTML = `<div class="dbar"><button class="primary" data-dscan${dupe.loading ? ' disabled' : ''}>${dupe.data ? '重新查找' : '开始查找'}</button>
+      <button data-dcompact title="${compact ? '回到原来的窗口' : '窗口缩到屏幕右边并置顶，只留查重；点「应用」后直接看桌面对比'}">${compact ? '退出小窗' : '小窗对比'}</button>
       <label title="越往右越严格：只有几乎一样的才算一组；往左会把同一个人物的不同动作也算进来，但也更容易把画风相近的不同人物算进来">相似度 <input type="range" id="dmin" min="0.65" max="0.99" step="0.01" value="${c.min}"> <span class="num" id="dminv">${Math.round(c.min * 100)}%</span></label>
       <label><input type="checkbox" id="donly"${c.onlyDevice ? ' checked' : ''}> 只看平板 / 手机上有的</label>
       <span id="dstatus"></span><span class="grow" style="flex:1"></span>
@@ -1512,8 +1544,16 @@ function renderDupes(keepScroll) {
   } else if (!dupe.groups.length) {
     list.innerHTML = `<div class="empty">相似度 ${Math.round(c.min * 100)}% 以上没有相似的壁纸${c.onlyDevice ? '（只看了平板 / 手机上有的）' : ''}</div>`;
   } else {
-    list.innerHTML = dupe.groups.slice(0, dupe.shown).map((g, gi) => groupDupeHtml(g, gi)).join('')
-      + (dupe.groups.length > dupe.shown ? `<div class="more"><button data-dmore>再显示 ${Math.min(20, dupe.groups.length - dupe.shown)} 组（共 ${dupe.groups.length} 组）</button></div>` : '');
+    if (compact) {
+      // the small window works one group at a time: apply, cancel the ones you don't want, next group
+      // (a group that has been dealt with disappears, so the same index then shows the next one)
+      dupe.cur = Math.max(0, Math.min(dupe.cur || 0, dupe.groups.length - 1));
+      $('#mainhead').insertAdjacentHTML('beforeend', `<div class="dnav"><button data-dgrp="-1"${dupe.cur ? '' : ' disabled'}>‹ 上一组</button><span>第 ${dupe.cur + 1} / ${dupe.groups.length} 组</span><button data-dgrp="1"${dupe.cur < dupe.groups.length - 1 ? '' : ' disabled'}>下一组 ›</button><span class="dhint">也可以按 ← →</span></div>`);
+      list.innerHTML = groupDupeHtml(dupe.groups[dupe.cur], dupe.cur);
+    } else {
+      list.innerHTML = dupe.groups.slice(0, dupe.shown).map((g, gi) => groupDupeHtml(g, gi)).join('')
+        + (dupe.groups.length > dupe.shown ? `<div class="more"><button data-dmore>再显示 ${Math.min(20, dupe.groups.length - dupe.shown)} 组（共 ${dupe.groups.length} 组）</button></div>` : '');
+    }
   }
   const r = $('#dmin');
   r.oninput = () => { $('#dminv').textContent = Math.round(r.value * 100) + '%'; };
@@ -1521,6 +1561,7 @@ function renderDupes(keepScroll) {
   $('#donly').onchange = e => { c.onlyDevice = e.target.checked; save(); dupe.shown = 20; renderDupes(); };
   $('#daddr').onchange = e => { c.addrs = e.target.value.split(/[,，\s]+/).map(x => x.trim()).filter(Boolean); save(); };
   if (keepScroll) main.scrollTop = top;
+  if (dupe.data) loadDupeDetails();
 }
 function groupDupeHtml(g, gi) {
   return `<div class="dg" data-g="${gi}"><div class="gh"><span>${g.length} 个相似，最像的两个 ${Math.round(g.score / 10)}%，不要的点「取消这个」</span><span class="grow"></span><a data-dnot="${gi}" title="这一组以后不再提示">这组不是重复</a></div>
@@ -1547,6 +1588,11 @@ function ask(html, okText) {
     box.classList.add('on');
     box.onclick = e => { const y = e.target.closest('[data-yes]'), n = e.target.closest('[data-no]'); if (y || n || e.target === box) { box.classList.remove('on'); res(!!y); } };
   });
+}
+function dupeGroupStep(d) {
+  const n = dupe.groups.length; if (!n) return;
+  dupe.cur = Math.max(0, Math.min((dupe.cur || 0) + d, n - 1));
+  renderDupes(); $('#main').scrollTop = 0;
 }
 // "取消这个": cancel that wallpaper right away (no confirmation), keep the rest of its group
 async function cancelDupes(gi, cancelId) {
@@ -1583,13 +1629,24 @@ document.addEventListener('click', async e => {
   if (S.tab !== 'dupes' || current) return;
   const t = e.target;
   if (t.closest('[data-dscan]')) { scanDupes(); return; }
+  const gr = t.closest('[data-dgrp]'); if (gr) { dupeGroupStep(+gr.dataset.dgrp); return; }
+  if (t.closest('[data-dcompact]')) {
+    const on = !document.body.classList.contains('compact');
+    if (on && selected) closeDetail();
+    // start from the group you were looking at
+    if (on) { const m = $('#main').getBoundingClientRect(), g = [...document.querySelectorAll('.dg')].find(x => x.getBoundingClientRect().bottom > m.top + 40); dupe.cur = g ? +g.dataset.g : 0; }
+    try { await host.call('compact', { on }); } catch (err) { toast('切换小窗失败：' + errText(err)); return; }
+    document.body.classList.toggle('compact', on);
+    setTimeout(() => { sizeTiles(); renderDupes(true); }, 150);
+    return;
+  }
   if (t.closest('[data-ddev]')) { const b = t.closest('[data-ddev]'); b.disabled = true; b.innerHTML = '<span class="spin"></span>'; await loadDevices(); renderDupes(true); return; }
   if (t.closest('[data-dmore]')) { dupe.shown += 20; renderDupes(true); return; }
-  const z = t.closest('[data-dzoom]'); if (z) { lightbox(z.src); return; }
+
   const ap = t.closest('[data-dapply]');
   if (ap) {
     const id = ap.dataset.dapply; ap.disabled = true; ap.innerHTML = '<span class="spin"></span>';
-    try { await host.call('dupeApply', { id }); dupe.applied = id; const it = dupe.data.items.find(x => x.id === id); toast('已应用到桌面：' + (it ? dupeTitle(it) : id) + '。到了换壁纸的时间会照常换走'); }
+    try { await host.call('dupeApply', { id }); dupe.applied = id; }   // no message: it would cover what you're comparing; the button turns into "✓ 桌面上"
     catch (err) { toast('应用失败：' + errText(err), 6000); }
     renderDupes(true); return;
   }
@@ -1603,8 +1660,12 @@ document.addEventListener('click', async e => {
   const un = t.closest('[data-dunsend]'); if (un) { const [model, id] = un.dataset.dunsend.split('|'); const c = dcfg(); c.send[model] = (c.send[model] || []).filter(x => x !== id); if (!c.send[model].length) delete c.send[model]; save(); renderDupes(true); return; }
   const cp = t.closest('[data-dcopy]');
   if (cp) { const ids = dcfg().send[cp.dataset.dcopy] || []; const text = ids.map(id => (items.get(id) || {}).title || id).join('\n'); try { await navigator.clipboard.writeText(text); toast('已复制 ' + ids.length + ' 个标题'); } catch (err) { toast('复制失败'); } return; }
-  const w = t.closest('.dt [data-works]'); if (w) { openAuthor(w.dataset.works); }
+  const w = t.closest('.dt [data-works]'); if (w) { openAuthor(w.dataset.works); return; }
+  // clicking a tile anywhere else: its details (again: close), like the other lists
+  const tile = t.closest('.dt[data-id]');
+  if (tile && !t.closest('button, a, input') && !document.body.classList.contains('compact')) { if (selected === tile.dataset.id) closeDetail(); else select(tile.dataset.id); }
 });
+
 
 // ---------- installed / pending ----------
 async function refreshInstalled() {
@@ -1654,7 +1715,13 @@ function applyTheme(theme, accent) {
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { sizeTiles(); loadSubsHead(); refreshInstalled(); } });
   window.addEventListener('focus', () => loadSubsHead());
   document.addEventListener('keydown', e => {
-    if (!selected || e.altKey || e.ctrlKey || e.metaKey || (e.target instanceof Element && e.target.closest('input, select, textarea')) || $('#lightbox').classList.contains('on')) return;
+    if (e.altKey || e.ctrlKey || e.metaKey || (e.target instanceof Element && e.target.closest('input, select, textarea')) || $('#lightbox').classList.contains('on')) return;
+    // small window in 查重: ← → go through the groups
+    if (document.body.classList.contains('compact') && S.tab === 'dupes' && !current) {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); dupeGroupStep(e.key === 'ArrowRight' ? 1 : -1); }
+      return;
+    }
+    if (!selected) return;
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); step(e.key === 'ArrowRight' ? 1 : -1); }
   });
   $('#main').addEventListener('scroll', () => { updateTop(); clearTimeout(posTimer); posTimer = setTimeout(savePosition, 500); }, { passive: true });
