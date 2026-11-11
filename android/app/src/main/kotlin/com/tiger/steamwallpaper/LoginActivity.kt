@@ -47,12 +47,17 @@ class LoginActivity : ComponentActivity() {
     companion object {
         /** true：登录订阅账号（大号），存在 WebView 的另一个配置文件里（[SubProfile]）。 */
         const val EXTRA_SUB = "sub"
+
+        /** true：登录新闻专用账号，存在 WebView 的另一个配置文件里（[NewsProfile]）。 */
+        const val EXTRA_NEWS = "news"
     }
 
     private var web: WebView? = null
     private val sub by lazy { intent.getBooleanExtra(EXTRA_SUB, false) }
+    private val newsAccount by lazy { intent.getBooleanExtra(EXTRA_NEWS, false) }
+    private val profile: WebProfile? by lazy { if (sub) SubProfile else if (newsAccount) NewsProfile else null }
 
-    private fun cookies(): CookieManager = if (sub) SubProfile.cookieManager() ?: CookieManager.getInstance() else CookieManager.getInstance()
+    private fun cookies(): CookieManager = profile?.cookieManager() ?: CookieManager.getInstance()
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -73,9 +78,11 @@ class LoginActivity : ComponentActivity() {
                         Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                             IconButton(onClick = { finish() }) { Icon(Icons.Default.Close, contentDescription = "取消") }
                             Column(Modifier.weight(1f)) {
-                                Text(if (sub) "登录订阅账号" else "登录 Steam", style = MaterialTheme.typography.titleMedium)
+                                Text(if (sub) "登录订阅账号" else if (newsAccount) "登录新闻账号" else "登录 Steam", style = MaterialTheme.typography.titleMedium)
                                 Text(
-                                    if (sub) "请登录电脑上 Steam 客户端用的账号（大号），订阅会加到这个号上" else "新闻、壁纸的浏览和关注都用这个账号；在 Steam 官方页面登录，账号密码不经过这个 App",
+                                    if (sub) "请登录电脑上 Steam 客户端用的账号（大号），订阅会加到这个号上"
+                                    else if (newsAccount) "新闻流、关注的发行商、愿望单和价格地区用这个号；在 Steam 官方页面登录，账号密码不经过这个 App"
+                                    else "新闻、壁纸的浏览和关注都用这个账号；在 Steam 官方页面登录，账号密码不经过这个 App",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -89,8 +96,9 @@ class LoginActivity : ComponentActivity() {
                             factory = { ctx ->
                                 WebView(ctx).also { w ->
                                     web = w
-                                    // 订阅账号：用另一个配置文件，不覆盖浏览账号的登录
-                                    if (sub && !SubProfile.use(w)) {
+                                    // 订阅账号、新闻账号：用另一个配置文件，不覆盖浏览账号的登录
+                                    val p = profile
+                                    if (p != null && !p.use(w)) {
                                         finish()
                                         return@also
                                     }

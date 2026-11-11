@@ -24,7 +24,7 @@ import java.security.SecureRandom
  * 用户在 Steam 官方登录页（[LoginActivity]）里自己登录，这里只读 WebView 里商店的 cookie（steamLoginSecure、sessionid），
  * 账号密码不经过 App。登录票据大约一天过期，快过期时用一个看不见的 WebView 打开一次商店页面，Steam 会自己换新票据。
  */
-class StoreSession(private val http: OkHttpClient, private val scope: CoroutineScope) {
+class StoreSession(private val http: OkHttpClient, private val scope: CoroutineScope, private val profile: () -> WebProfile? = { null }) {
     companion object {
         const val STORE = "https://store.steampowered.com"
         const val API = "https://api.steampowered.com"
@@ -48,7 +48,7 @@ class StoreSession(private val http: OkHttpClient, private val scope: CoroutineS
 
     /** 从 WebView 读商店的 cookie，返回登录的账号是否变了。在主线程调用。 */
     fun syncCookies(): Boolean {
-        val cm = CookieManager.getInstance()
+        val cm = cookieManager()
         val map = LinkedHashMap<String, String>()
         cm.getCookie(STORE)?.split(';')?.forEach { part ->
             val eq = part.indexOf('=')
@@ -89,6 +89,21 @@ class StoreSession(private val http: OkHttpClient, private val scope: CoroutineS
         return bytes.joinToString("") { "%02x".format(it) }
     }
 
+    /** 存这个账号 cookie 的 CookieManager：新闻专用账号在另一个配置文件里。 */
+    private fun cookieManager(): CookieManager = profile()?.cookieManager() ?: CookieManager.getInstance()
+
+    /** 社区（steamcommunity.com）那边登录了没有：商店的票据可以从它换。 */
+    fun communityLoggedIn(): Boolean = cookieManager().getCookie(Steam.COMMUNITY)?.contains("steamLoginSecure=") == true
+
+    /** 退出这个账号（只用于新闻专用账号）。 */
+    fun logoutProfile() {
+        val p = profile() ?: return
+        p.cookieManager()?.let {
+            it.removeAllCookies(null)
+            it.flush()
+        }
+    }
+
     private fun cookieHeader() = cookies.entries.joinToString("; ") { "${it.key}=${it.value}" }
 
     // ---- 续期 ----
@@ -125,9 +140,10 @@ class StoreSession(private val http: OkHttpClient, private val scope: CoroutineS
             return
         }
         try {
+            profile()?.use(web)
             web.settings.javaScriptEnabled = true
             web.settings.domStorageEnabled = true
-            CookieManager.getInstance().setAcceptThirdPartyCookies(web, true)
+            cookieManager().setAcceptThirdPartyCookies(web, true)
             web.webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView, url: String) {
                     if (url.startsWith(STORE) && "/login" !in url) back.complete(Unit)
@@ -135,7 +151,7 @@ class StoreSession(private val http: OkHttpClient, private val scope: CoroutineS
             }
             web.loadUrl("$STORE/account/")
             withTimeoutOrNull(30_000) { back.await() }
-            CookieManager.getInstance().flush()
+            cookieManager().flush()
         } finally {
             web.stopLoading()
             web.destroy()

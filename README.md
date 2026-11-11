@@ -22,7 +22,7 @@ Wallpaper Engine 的托盘小工具：按每张壁纸的**添加时间**分档�
   游戏卡片（按账号商店地区的价格加人民币换算、评测等级 / 好评率 / 好评数、加入愿望单）、在浏览器打开。
 - **壁纸**：浏览 Steam 创意工坊里关注的作者的 Wallpaper Engine 壁纸、直接订阅（由电脑上的 Steam 下载）。
 
-登录在 Steam 官方的登录页里完成，账号密码不经过 App。安卓版单独发布在本仓库的 Releases 里（标签 `android-v版本号`），
+新闻可以单独登录一个「新闻账号」（新闻设置里），和壁纸用的账号分开。登录在 Steam 官方的登录页里完成，账号密码不经过 App。安卓版单独发布在本仓库的 Releases 里（标签 `android-v版本号`），
 App 里可以检查更新；更新记录见 [android/CHANGELOG.md](android/CHANGELOG.md)。
 
 ## 开始 / 停止

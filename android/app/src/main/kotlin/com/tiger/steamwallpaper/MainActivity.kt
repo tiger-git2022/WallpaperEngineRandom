@@ -95,12 +95,17 @@ class MainActivity : ComponentActivity() {
         App.instance.workshop.afterSubLogin()
     }
 
+    private val newsLogin = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        App.instance.news.afterNewsLogin()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         val app = App.instance
         LocalActions.login = { login.launch(Intent(this, LoginActivity::class.java)) }
         LocalActions.loginSub = { subLogin.launch(Intent(this, LoginActivity::class.java).putExtra(LoginActivity.EXTRA_SUB, true)) }
+        LocalActions.loginNews = { newsLogin.launch(Intent(this, LoginActivity::class.java).putExtra(LoginActivity.EXTRA_NEWS, true)) }
         if (!started) {
             started = true
             app.workshop.start()

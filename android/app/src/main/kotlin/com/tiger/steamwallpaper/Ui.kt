@@ -453,6 +453,7 @@ object LocalActions {
     var lightbox: (String) -> Unit = {}
     var log: () -> Unit = {}
     var loginSub: () -> Unit = {}
+    var loginNews: () -> Unit = {}
     var menu: (MenuRequest) -> Unit = {}
     var newsSettings: () -> Unit = {}
 }

@@ -70,6 +70,9 @@ class NewsStore(private val file: File, private val scope: CoroutineScope) {
     /** 价格后面按汇率显示人民币。 */
     var showCny by mutableStateOf(true)
 
+    /** 登录了新闻专用账号（[NewsProfile]）：新闻用它，否则用浏览账号。 */
+    var newsAccount by mutableStateOf(false)
+
     /** 自动刷新间隔（分钟）：回到 App 时超过这么久没刷新就刷新。 */
     var refreshMinutes by mutableIntStateOf(30)
 
@@ -117,6 +120,7 @@ class NewsStore(private val file: File, private val scope: CoroutineScope) {
             lookbackDays = o.optInt("lookbackDays", 30).coerceIn(3, 180)
             showCny = o.optBoolean("showCny", true)
             refreshMinutes = o.optInt("refreshMinutes", 30).coerceIn(0, 24 * 60)
+            newsAccount = o.optBoolean("newsAccount")
             o.optJSONObject("blockedApps")?.let { b -> b.keys().forEach { k -> k.toIntOrNull()?.let { blockedApps[it] = b.optString(k) } } }
             o.optJSONObject("blockedClans")?.let { b -> b.keys().forEach { k -> k.toIntOrNull()?.let { blockedClans[it] = b.optString(k) } } }
             readUpTo = o.optLong("readUpTo")
@@ -194,6 +198,7 @@ class NewsStore(private val file: File, private val scope: CoroutineScope) {
         o.put("lookbackDays", lookbackDays)
         o.put("showCny", showCny)
         o.put("refreshMinutes", refreshMinutes)
+        o.put("newsAccount", newsAccount)
         o.put("blockedApps", JSONObject().apply { blockedApps.forEach { (k, v) -> put(k.toString(), v) } })
         o.put("blockedClans", JSONObject().apply { blockedClans.forEach { (k, v) -> put(k.toString(), v) } })
         o.put("readUpTo", readUpTo)

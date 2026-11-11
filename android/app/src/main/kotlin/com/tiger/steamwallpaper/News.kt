@@ -213,13 +213,14 @@ class NewsFeed(val session: StoreSession, val store: NewsStore, private val cach
         if (!started) return
         if (force) renewTried = false
         val changed = session.syncCookies()
-        val community = App.instance.workshop.me.loggedIn
-        if (changed && session.loggedIn && store.lastRefresh > 0 && cachedOwner.isNotEmpty() && cachedOwner != session.steamId) {
+        val community = session.communityLoggedIn()
+        if (changed && session.loggedIn && cachedOwner.isNotEmpty() && cachedOwner != session.steamId) {
             // 换了账号：和账号有关的都重新开始
             reset()
             store.resetAccount()
         }
         loggedIn = session.loggedIn
+        if (changed || (session.loggedIn && accountId != session.steamId)) loadAccount()
         if (!session.loggedIn && community) {
             // 社区登录了，商店还没有票据：用看不见的 WebView 打开一次商店，让 Steam 发一张（只试一次）
             if (renewTried) return
@@ -246,10 +247,57 @@ class NewsFeed(val session: StoreSession, val store: NewsStore, private val cach
         if (store.lastRefresh == 0L || (minutes > 0 && now - store.lastRefresh > minutes * 60)) refresh(manual = false)
     }
 
+    /** 浏览账号退出了：新闻用的是浏览账号时一起清掉（新闻专用账号不受影响）。 */
     fun logout() {
-        reset()
-        loggedIn = false
-        session.syncCookies()
+        if (!store.newsAccount) {
+            reset()
+            loggedIn = false
+        }
+        refreshLogin()
+    }
+
+    // ---- 新闻专用账号 ----
+
+    /** 新闻现在用的账号的名字和头像（公开的个人资料）。 */
+    var accountId by mutableStateOf("")
+        private set
+    var accountName by mutableStateOf("")
+        private set
+    var accountAvatar by mutableStateOf("")
+        private set
+
+    private fun loadAccount() {
+        val id = session.steamId
+        accountId = id
+        accountName = ""
+        accountAvatar = ""
+        if (id.isEmpty()) return
+        scope.launch {
+            val p = runCatching { App.instance.workshop.steam.profile(id) }.getOrNull() ?: return@launch
+            if (accountId == id) {
+                accountName = p.name
+                accountAvatar = p.avatar
+            }
+        }
+    }
+
+    /** 新闻账号的登录页关闭后：登录成功就改用它。 */
+    fun afterNewsLogin() {
+        val ok = NewsProfile.cookieManager()?.getCookie(Steam.COMMUNITY)?.contains("steamLoginSecure=") == true
+        if (!ok) return
+        store.newsAccount = true
+        store.save()
+        refreshLogin(force = true)
+        App.instance.workshop.toast("新闻改用新登录的账号")
+    }
+
+    /** 退出新闻账号，新闻改回用浏览账号。 */
+    fun logoutNewsAccount() {
+        session.logoutProfile()
+        store.newsAccount = false
+        store.save()
+        refreshLogin(force = true)
+        App.instance.workshop.toast("已退出新闻账号，新闻改用浏览账号")
     }
 
     private fun reset() {

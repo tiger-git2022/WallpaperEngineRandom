@@ -601,6 +601,8 @@ fun NewsSettingsSheet(open: Boolean, onDismiss: () -> Unit) {
     GlassSheet(open, onDismiss, maxHeight = 0.85f) { scroll ->
         SheetTitle("新闻设置")
         Column(scroll.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 18.dp)) {
+            NewsAccount(onDismiss)
+            HorizontalDivider(Modifier.padding(vertical = 12.dp))
             SwitchRow("显示 Steam「精选」的热门游戏新闻", "不在你的库、愿望单和关注里、只因为 Steam 推荐才出现的；Steam 新闻中心默认也不显示", store.showFeatured) { feed.setShowFeatured(it) }
             HorizontalDivider(Modifier.padding(vertical = 12.dp))
             SwitchRow("关注的发行商出的 DLC 也推送", "包括原声带", store.includeDlc) { feed.setIncludeDlc(it) }
@@ -636,6 +638,35 @@ fun NewsSettingsSheet(open: Boolean, onDismiss: () -> Unit) {
             store.blockedClans.toList().sortedBy { it.second }.forEach { (id, name) ->
                 BlockedRow("账号「$name」") { feed.setBlocked("clan", id, name, false) }
             }
+        }
+    }
+}
+
+/** 新闻用的账号：可以单独登录一个新闻专用账号（比如另一个地区的号），和壁纸的浏览、订阅账号分开。 */
+@Composable
+private fun NewsAccount(onDismiss: () -> Unit) {
+    val feed = news
+    val store = feed.store
+    Text("新闻账号", fontWeight = FontWeight.Medium)
+    if (feed.loggedIn) {
+        Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Avatar(feed.accountAvatar, 44.dp)
+            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                Text(feed.accountName.ifEmpty { "Steam 账号" }, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    (if (store.newsAccount) "新闻专用账号" else "和浏览账号是同一个") + if (feed.store.country.isNotEmpty()) " · 商店地区 ${store.country}" else "",
+                    fontSize = 12.sp,
+                )
+            }
+            if (store.newsAccount) GlassButton("退出", onClick = { feed.logoutNewsAccount() })
+        }
+    }
+    when {
+        store.newsAccount -> Text("新闻流、关注的发行商、愿望单和价格都用这个号；退出后改用浏览账号。", fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
+        !NewsProfile.supported -> Text("这台手机的系统 WebView 太旧，不能单独登录新闻账号；请在应用商店更新「Android System WebView」。", fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+        else -> {
+            Text("现在用浏览账号。可以单独登录一个账号看新闻（比如另一个地区的号），和壁纸用的账号分开，互不影响。", fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+            GlassButton("登录新闻账号", onClick = { onDismiss(); LocalActions.loginNews() }, primary = true, modifier = Modifier.padding(top = 10.dp))
         }
     }
 }
