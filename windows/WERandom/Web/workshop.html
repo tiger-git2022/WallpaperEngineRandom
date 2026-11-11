@@ -1463,7 +1463,7 @@ async function scanDupes() {
     const remote = [...new Set(dupe.devices.flatMap(d => d.ids))].filter(id => !installed.has(id));
     dupe.text = '正在准备…'; paintDupeStatus();
     dupe.data = await host.call('dupeScan', { remote });
-    dupe.removed.clear(); dupe.shown = 20;
+    dupe.removed.clear(); dupe.shown = 20; dupe.rank = null;
   } catch (e) { dupe.error = errText(e); }
   dupe.loading = false; dupe.text = ''; renderDupes();
   loadDupeDetails();
@@ -1504,9 +1504,17 @@ function buildGroups() {
     map.get(r).add(a).add(b); score.set(r, Math.max(score.get(r) || 0, s));
   }
   let groups = [...map.entries()].map(([r, set]) => Object.assign([...set].map(i => d.items[i]), { score: score.get(r) }));
-  if (c.onlyDevice) groups = groups.filter(g => g.some(it => onDevices(it.id).length));
+  // a group keeps its place once shown: cancelling one can lower its best score or take away its device copy, which
+  // would move it (or drop it from "only devices") and put another group where you were working
+  const rk = dupe.rank || (dupe.rank = new Map());
+  const known = g => g.some(it => rk.has(it.id));
+  if (c.onlyDevice) groups = groups.filter(g => known(g) || g.some(it => onDevices(it.id).length));
   // groups touching a device first, then the closest matches
   groups.sort((x, y) => (+y.some(it => onDevices(it.id).length) - +x.some(it => onDevices(it.id).length)) || y.score - x.score);
+  for (const g of groups) g.rank = Math.min(...g.map(it => rk.get(it.id) ?? Infinity));
+  for (const g of groups) if (g.rank === Infinity) g.rank = dupe.rankNext = (dupe.rankNext || 0) + 1;
+  for (const g of groups) for (const it of g) if (!rk.has(it.id)) rk.set(it.id, g.rank);
+  groups.sort((x, y) => x.rank - y.rank);
   for (const g of groups) g.sort((x, y) => (+!!x.remote - +!!y.remote) || (y.added || 0) - (x.added || 0));
   return groups;
 }
@@ -1557,8 +1565,8 @@ function renderDupes(keepScroll) {
   }
   const r = $('#dmin');
   r.oninput = () => { $('#dminv').textContent = Math.round(r.value * 100) + '%'; };
-  r.onchange = () => { c.min = +r.value; save(); dupe.shown = 20; renderDupes(); };
-  $('#donly').onchange = e => { c.onlyDevice = e.target.checked; save(); dupe.shown = 20; renderDupes(); };
+  r.onchange = () => { c.min = +r.value; save(); dupe.shown = 20; dupe.rank = null; renderDupes(); };
+  $('#donly').onchange = e => { c.onlyDevice = e.target.checked; save(); dupe.shown = 20; dupe.rank = null; renderDupes(); };
   $('#daddr').onchange = e => { c.addrs = e.target.value.split(/[,，\s]+/).map(x => x.trim()).filter(Boolean); save(); };
   if (keepScroll) main.scrollTop = top;
   if (dupe.data) loadDupeDetails();
