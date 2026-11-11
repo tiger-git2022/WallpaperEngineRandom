@@ -49,6 +49,8 @@ import androidx.compose.material.icons.filled.DynamicFeed
 import androidx.compose.material.icons.automirrored.filled.Login
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Newspaper
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -85,6 +87,7 @@ class MainActivity : ComponentActivity() {
     private val login = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         val w = App.instance.workshop
         w.refreshLogin()
+        App.instance.news.refreshLogin(force = true)
         if (w.me.loggedIn) w.toast("已登录 Steam")
     }
 
@@ -101,6 +104,7 @@ class MainActivity : ComponentActivity() {
         if (!started) {
             started = true
             app.workshop.start()
+            app.news.start()
         }
         setContent { WorkshopTheme { WorkshopApp(this) } }
     }
@@ -109,8 +113,15 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         val app = App.instance
         app.workshop.refreshLogin()
+        app.news.refreshLogin()
         app.updater.onResume(this)
         app.updater.autoCheck()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // 离开（切到后台、锁屏、退出）：记下「上次看到这里」
+        App.instance.news.leave()
     }
 
     companion object {
@@ -131,6 +142,9 @@ fun WorkshopApp(activity: MainActivity) {
     LocalActions.log = { logOpen = true }
     var menu by remember { mutableStateOf<MenuRequest?>(null) }
     LocalActions.lightbox = { lightbox = it }
+    LocalActions.menu = { menu = it }
+    var newsSettingsOpen by remember { mutableStateOf(false) }
+    LocalActions.newsSettings = { newsSettingsOpen = true }
 
     val status = WindowInsets.statusBars.asPaddingValues()
     val nav = WindowInsets.navigationBars.asPaddingValues()
@@ -201,6 +215,7 @@ fun WorkshopApp(activity: MainActivity) {
             DetailSheet()
             FilterSheet(filterOpen) { filterOpen = false }
             AccountSheet(accountOpen) { accountOpen = false }
+            NewsSettingsSheet(newsSettingsOpen) { newsSettingsOpen = false }
             LogSheet(logOpen) { logOpen = false }
             UpdateSheet(activity)
             Lightbox(lightbox) { lightbox = null }
@@ -226,6 +241,8 @@ private fun TopBar(modifier: Modifier, onAccount: () -> Unit) {
                     Text(author.view.total?.let { "$it 个作品" } ?: "正在读取…", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                 }
             }
+        } else if (ws.store.tab == "news") {
+            NewsBar(Modifier.weight(1f))
         } else {
             SearchField(Modifier.weight(1f))
         }
@@ -279,6 +296,39 @@ private fun SearchField(modifier: Modifier) {
     }
 }
 
+/** 新闻页的顶栏：标题和刷新状态，右边是新闻设置。 */
+@Composable
+private fun NewsBar(modifier: Modifier) {
+    val feed = news
+    val store = feed.store
+    Row(
+        modifier.fillMaxHeight().glassClip(CircleShapeR, MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = GLASS_BAR_TINT), GlassStyle.Panel)
+            .padding(start = 20.dp, end = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("Steam 新闻", fontWeight = FontWeight.SemiBold, maxLines = 1)
+            val status = when {
+                feed.refreshing -> feed.progress.ifEmpty { "正在刷新…" }
+                feed.error.isNotEmpty() -> feed.error
+                store.lastRefresh > 0 -> "上次刷新 " + whenText(store.lastRefresh) + if (feed.followedCount > 0) " · 关注 ${feed.followedCount} 个发行商" else ""
+                else -> "下拉刷新"
+            }
+            Text(
+                status, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                color = if (feed.error.isNotEmpty() && !feed.refreshing) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        if (feed.refreshing) {
+            androidx.compose.material3.CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+            Spacer(Modifier.width(10.dp))
+        }
+        Box(Modifier.size(44.dp).clip(CircleShape).clickable { LocalActions.newsSettings() }, contentAlignment = Alignment.Center) {
+            Icon(Icons.Default.Settings, contentDescription = "新闻设置")
+        }
+    }
+}
+
 @Composable
 private fun GlassCircle(onClick: () -> Unit, content: @Composable () -> Unit) {
     Box(
@@ -314,6 +364,7 @@ private fun TabPages(onSort: (Rect) -> Unit, onFilter: () -> Unit) {
     androidx.compose.foundation.pager.HorizontalPager(pager, modifier = Modifier.fillMaxSize(), key = { keys[it] }) { p ->
         CompositionLocalProvider(LocalPageActive provides (p == pager.currentPage)) {
             when (keys[p]) {
+                "news" -> NewsPage()
                 "browse" -> BrowsePage(onSort, onFilter)
                 "following" -> FollowingPage()
                 else -> TimelinePage()
@@ -325,7 +376,8 @@ private fun TabPages(onSort: (Rect) -> Unit, onFilter: () -> Unit) {
 private class TabItem(val key: String, val title: String, val icon: ImageVector)
 
 private val TABS = listOf(
-    TabItem("timeline", "时间线", Icons.Default.DynamicFeed),
+    TabItem("news", "新闻", Icons.Default.Newspaper),
+    TabItem("timeline", "壁纸动态", Icons.Default.DynamicFeed),
     TabItem("browse", "浏览工坊", Icons.Default.Wallpaper),
     TabItem("following", "关注的作者", Icons.Default.People),
 )
@@ -360,6 +412,15 @@ private fun TabBar(modifier: Modifier) {
                         if (on) {
                             // 再点一次当前标签：不在顶部就回到顶部，已经在顶部就刷新
                             when (t.key) {
+                                "news" -> with(news) {
+                                    if (list.firstVisibleItemIndex == 0 && list.firstVisibleItemScrollOffset == 0) {
+                                        refresh(manual = true)
+                                    } else {
+                                        // 点标签回到顶部：中间跳过的也都算看过
+                                        markAllRead()
+                                        scope.launch { list.animateScrollToItem(0) }
+                                    }
+                                }
                                 "timeline" -> ws.timeline?.let { v ->
                                     if (v.list.firstVisibleItemIndex == 0 && v.list.firstVisibleItemScrollOffset == 0) {
                                         ws.refresh(v)
@@ -388,10 +449,15 @@ private fun TabBar(modifier: Modifier) {
             ) {
                 Box(Modifier.size(24.dp)) {
                     Icon(t.icon, contentDescription = null, tint = color, modifier = Modifier.fillMaxSize())
-                    if (t.key == "timeline" && ws.unread > 0) {
+                    val badge = when (t.key) {
+                        "news" -> news.unread
+                        "timeline" -> ws.unread
+                        else -> 0
+                    }
+                    if (badge > 0) {
                         // 角标放在图标右边、和图标居中对齐：不盖住图标，也不会被标签的圆角裁掉
                         Text(
-                            if (ws.unread > 99) "99+" else ws.unread.toString(),
+                            if (badge > 99) "99+" else badge.toString(),
                             color = androidx.compose.ui.graphics.Color.White, fontSize = 10.sp, lineHeight = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1,
                             modifier = Modifier.align(Alignment.CenterStart).offset(x = 27.dp)
                                 .wrapContentSize(Alignment.CenterStart, unbounded = true)
@@ -406,7 +472,7 @@ private fun TabBar(modifier: Modifier) {
     }
 }
 
-/** 标签页左右滑动时的实时位置（0 = 时间线，1 = 浏览工坊，2 = 关注的作者，中间值 = 正在滑）。 */
+/** 标签页左右滑动时的实时位置（0 = 新闻，1 = 壁纸动态，2 = 浏览工坊，3 = 关注的作者，中间值 = 正在滑）。 */
 private val tabPos = androidx.compose.runtime.mutableFloatStateOf(
     TABS.indexOfFirst { it.key == ws.store.tab }.coerceAtLeast(0).toFloat(),
 )

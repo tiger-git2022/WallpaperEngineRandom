@@ -397,7 +397,7 @@ private fun SubAccount() {
 }
 
 @Composable
-private fun SwitchRow(title: String, summary: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+fun SwitchRow(title: String, summary: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth().clickable { onChange(!checked) }, verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f).padding(end = 12.dp)) {
             Text(title, fontWeight = FontWeight.Medium)
@@ -437,7 +437,7 @@ fun LogSheet(open: Boolean, onDismiss: () -> Unit) {
                 GlassButton("清空", onClick = { Log.clear(); text = "" })
                 GlassButton("复制", primary = true, onClick = {
                     val cm = context.getSystemService(android.content.ClipboardManager::class.java)
-                    cm?.setPrimaryClip(android.content.ClipData.newPlainText("Steam壁纸 日志", text))
+                    cm?.setPrimaryClip(android.content.ClipData.newPlainText("Steam信息流 日志", text))
                     ws.toast("已复制日志")
                 })
             }

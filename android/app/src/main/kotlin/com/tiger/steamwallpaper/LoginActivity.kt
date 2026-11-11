@@ -75,7 +75,7 @@ class LoginActivity : ComponentActivity() {
                             Column(Modifier.weight(1f)) {
                                 Text(if (sub) "登录订阅账号" else "登录 Steam", style = MaterialTheme.typography.titleMedium)
                                 Text(
-                                    if (sub) "请登录电脑上 Steam 客户端用的账号（大号），订阅会加到这个号上" else "浏览、关注、时间线都用这个账号；订阅可以另外指定一个账号",
+                                    if (sub) "请登录电脑上 Steam 客户端用的账号（大号），订阅会加到这个号上" else "新闻、壁纸的浏览和关注都用这个账号；在 Steam 官方页面登录，账号密码不经过这个 App",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )

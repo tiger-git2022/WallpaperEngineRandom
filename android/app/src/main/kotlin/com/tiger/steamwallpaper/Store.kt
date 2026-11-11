@@ -36,7 +36,7 @@ class Store(private val file: File, private val scope: CoroutineScope) {
     val follows = mutableStateListOf<String>()
     val filters = mutableStateMapOf<String, List<String>>()
     var sort by mutableStateOf("trend7")
-    var tab by mutableStateOf("timeline")
+    var tab by mutableStateOf("news")
     var mergePosts by mutableStateOf(false)
     var glass by mutableStateOf(true)
 
@@ -84,7 +84,7 @@ class Store(private val file: File, private val scope: CoroutineScope) {
             o.optJSONArray("follows")?.let { follows.addAll(it.strings()) }
             o.optJSONObject("filters")?.let { f -> GROUPS.forEach { g -> filters[g.key] = f.optJSONArray(g.key)?.strings() ?: emptyList() } }
             sort = o.optString("sort").takeIf { s -> SORTS.any { it.key == s } } ?: "trend7"
-            tab = o.optString("tab").takeIf { it in listOf("timeline", "browse", "following") } ?: "timeline"
+            tab = o.optString("tab").takeIf { it in listOf("news", "timeline", "browse", "following") } ?: "news"
             mergePosts = o.optBoolean("mergePosts")
             glass = o.optBoolean("glass", true)
             unsubscribedOnly = o.optBoolean("unsubscribedOnly")

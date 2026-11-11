@@ -29,6 +29,8 @@ class App : Application(), SingletonImageLoader.Factory {
         private set
     lateinit var updater: Updater
         private set
+    lateinit var news: NewsFeed
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -47,6 +49,7 @@ class App : Application(), SingletonImageLoader.Factory {
         val sub = Steam(cookieSource = { if (store.subAccount) SubProfile.cookieManager() else null }, client = steam.http)
         workshop = Workshop(steam, sub, store, scope)
         updater = Updater(this, steam.http, store, scope)
+        news = NewsFeed(StoreSession(steam.http, scope), NewsStore(java.io.File(filesDir, "news.json"), scope), java.io.File(cacheDir, "news_cache.json"), scope)
     }
 
     override fun newImageLoader(context: PlatformContext): ImageLoader = ImageLoader.Builder(context)

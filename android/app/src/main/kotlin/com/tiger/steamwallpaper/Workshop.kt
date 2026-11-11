@@ -237,13 +237,15 @@ class Workshop(val steam: Steam, val sub: Steam, val store: Store, private val s
             return
         }
         loadFollows()
-        // 时间线是主页面；在别的标签页时也在后台加载，好显示未读数
+        // 壁纸时间线在别的标签页时也在后台加载，好显示未读数
         openTab(store.tab)
         if (store.tab != "timeline") timelineView()
+        App.instance.news.refreshLogin()
     }
 
     fun logout() {
         steam.logout()
+        App.instance.news.logout()
         me = Me()
         afterLogin()
         toast("已退出 Steam")
@@ -258,6 +260,7 @@ class Workshop(val steam: Steam, val sub: Steam, val store: Store, private val s
         when (tab) {
             "timeline" -> timelineView()
             "browse" -> browseView()
+            "news" -> App.instance.news.autoRefresh()
             "following" -> if (store.follows.isEmpty() && me.loggedIn && !followsLoading) loadFollows()
         }
     }

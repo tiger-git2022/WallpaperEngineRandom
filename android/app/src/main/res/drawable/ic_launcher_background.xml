@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 浅蓝白渐变底：桌面按自己的形状裁（vivo 是圆角方块） -->
+<!-- 图标底色：纯色的 Steam 蓝（不用渐变），桌面按自己的形状裁 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <gradient android:angle="270" android:startColor="#EAF3FF" android:endColor="#D2E6FC" />
+    <solid android:color="#4A8FC6" />
 </shape>
