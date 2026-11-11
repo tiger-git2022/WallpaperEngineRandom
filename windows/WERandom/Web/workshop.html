@@ -1493,17 +1493,22 @@ function dupeAlive(it) {
 function buildGroups() {
   const d = dupe.data; if (!d) return [];
   const c = dcfg(), ign = new Set(c.ignore), min = Math.round(c.min * 1000);
-  const parent = d.items.map((_, i) => i);
-  const find = i => { while (parent[i] !== i) i = parent[i] = parent[parent[i]]; return i; };
   const ok = (a, b) => dupeAlive(d.items[a]) && dupeAlive(d.items[b]) && !ign.has(pairKey(d.items[a].id, d.items[b].id));
-  for (const [a, b, s] of d.pairs) { if (s < min) break; if (ok(a, b)) { const ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; } }
-  const map = new Map(), score = new Map();
-  for (const [a, b, s] of d.pairs) {
-    if (s < min) break; if (!ok(a, b)) continue;
-    const r = find(a); if (!map.has(r)) map.set(r, new Set());
-    map.get(r).add(a).add(b); score.set(r, Math.max(score.get(r) || 0, s));
+  // every two in a group must be similar enough (complete linkage). Joining by single pairs chained look-alikes
+  // (A~B, B~C, C~D…) into one group of hundreds where most are not alike at all.
+  const n = d.items.length, near = new Set(), key = (a, b) => a < b ? a * n + b : b * n + a;
+  for (const [a, b, s] of d.pairs) { if (s < min) break; if (ok(a, b)) near.add(key(a, b)); }
+  const root = d.items.map((_, i) => i), members = new Map(), score = new Map();
+  for (const [a, b, s] of d.pairs) {   // most similar first
+    if (s < min) break; if (!near.has(key(a, b))) continue;
+    const ra = root[a], rb = root[b]; if (ra === rb) continue;
+    const A = members.get(ra) || [a], B = members.get(rb) || [b];
+    if (!A.every(x => B.every(y => near.has(key(x, y))))) continue;
+    for (const y of B) root[y] = ra;
+    members.set(ra, A.concat(B)); members.delete(rb);
+    score.set(ra, Math.max(score.get(ra) || 0, score.get(rb) || 0, s)); score.delete(rb);
   }
-  let groups = [...map.entries()].map(([r, set]) => Object.assign([...set].map(i => d.items[i]), { score: score.get(r) }));
+  let groups = [...members.entries()].map(([r, list]) => Object.assign(list.map(i => d.items[i]), { score: score.get(r) }));
   // a group keeps its place once shown: cancelling one can lower its best score or take away its device copy, which
   // would move it (or drop it from "only devices") and put another group where you were working
   const rk = dupe.rank || (dupe.rank = new Map());
