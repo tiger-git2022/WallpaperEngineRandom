@@ -637,15 +637,30 @@ public sealed class WorkshopView : Grid
 	private async Task<string> DupeScanCoreAsync(List<string> remote)
 	{
 		DupeProgress("正在读取本机的壁纸…");
-		List<JObj> local = await Task.Run(LocalWallpapers);
+		var files = new Dictionary<string, List<(string hash, long len)>>();
+		List<JObj> local = await Task.Run(() => LocalWallpapers(files));
 		var sources = new List<DupeFinder.Source>();
 		var info = new Dictionary<string, JObj>();
+		// video frames only for wallpapers downloaded within a year (decoding is slow; older ones were sorted out long ago)
+		double recent = (DateTime.UtcNow.AddDays(-365) - new DateTime(1970, 1, 1)).TotalSeconds;
+		bool ffmpeg = DupeFinder.Ffmpeg != null;
+		int videos = 0;
 		foreach (JObj o in local)
 		{
 			string file = o.Str("file");
 			sources.Add(new DupeFinder.Source { Key = o.Str("id"), Image = file });
+			if (ffmpeg && o.Has("video") && o.Num("added") >= recent)
+			{
+				sources.Add(new DupeFinder.Source { Key = "v:" + o.Str("id"), Image = o.Str("video"), Video = true });
+				videos++;
+			}
 			info[o.Str("id")] = o;
 			o.Remove("file");
+			o.Remove("video");
+		}
+		if (!ffmpeg)
+		{
+			_engine.Log.Log("查重：没找到 ffmpeg，视频画面不比较（只比封面和文件）");
 		}
 		remote = (remote ?? new List<string>()).Where(id => Regex.IsMatch(id, "^\\d{1,20}$") && !info.ContainsKey(id)).Distinct().ToList();
 		if (remote.Count > 0)
@@ -657,7 +672,26 @@ public sealed class WorkshopView : Grid
 			}
 		}
 		await Dupes.EnsureModelAsync(Download, DupeProgress, default);
-		List<DupeFinder.Entry> entries = await Task.Run(() => Dupes.Embed(sources, (done, total) => DupeProgress("正在分析封面：" + done + " / " + total), default));
+		List<DupeFinder.Entry> embedded = await Task.Run(() => Dupes.Embed(sources, (done, total) => DupeProgress((videos > 0 ? "正在分析封面和视频画面（视频第一次比较慢）：" : "正在分析封面：") + done + " / " + total), default));
+		// a video wallpaper = its cover frames + its video frames
+		var videoOf = embedded.Where(e => e.Key.StartsWith("v:")).ToDictionary(e => e.Key.Substring(2));
+		var entries = new List<DupeFinder.Entry>();
+		foreach (DupeFinder.Entry e in embedded)
+		{
+			if (e.Key.StartsWith("v:") || e.Vectors.Length == 0)
+			{
+				continue;
+			}
+			if (videoOf.TryGetValue(e.Key, out DupeFinder.Entry v) && v.Vectors.Length > 0)
+			{
+				entries.Add(new DupeFinder.Entry { Key = e.Key, Stamp = e.Stamp, Vectors = e.Vectors.Concat(v.Vectors).ToArray(), Hists = e.Hists.Concat(v.Hists).ToArray(), CoverCount = e.Vectors.Length });
+			}
+			else
+			{
+				e.CoverCount = e.Vectors.Length;
+				entries.Add(e);
+			}
+		}
 		DupeProgress("正在比较…");
 		List<DupeFinder.Pair> pairs = await Task.Run(() => DupeFinder.Pairs(entries, 0.65f, 40000));
 		lock (DupeImages)
@@ -679,67 +713,99 @@ public sealed class WorkshopView : Grid
 		var list = new List<object>();
 		foreach (DupeFinder.Pair p in pairs)
 		{
-			list.Add(new List<object> { p.A, p.B, (int)Math.Round(p.Score * 1000) });
+			list.Add(new List<object> { p.A, p.B, (int)Math.Round(p.Score * 1000), p.Video ? 1 : 0 });
 		}
-		_engine.Log.Log("查重：" + entries.Count + " 个壁纸（" + remote.Count + " 个只在平板 / 手机上），相似度 0.65 以上的组合 " + pairs.Count + " 个");
+		// same big files (re-uploads with another cover): [a, b, share ‰]
+		var index = new Dictionary<string, int>();
+		for (int i = 0; i < entries.Count; i++)
+		{
+			index[entries[i].Key] = i;
+		}
+		var same = new List<object>();
+		foreach ((string a, string b, float share) in DupeFinder.SameFiles(files, 0.5f))
+		{
+			if (index.TryGetValue(a, out int ia) && index.TryGetValue(b, out int ib))
+			{
+				same.Add(new List<object> { Math.Min(ia, ib), Math.Max(ia, ib), (int)Math.Round(share * 1000) });
+			}
+		}
+		_engine.Log.Log("查重：" + entries.Count + " 个壁纸（" + remote.Count + " 个只在平板 / 手机上，" + videos + " 个比较视频画面），相似度 0.65 以上的组合 "
+			+ pairs.Count + " 个（其中靠视频画面的 " + pairs.Count(p => p.Video) + " 个），有相同文件的 " + same.Count + " 对");
 		DupeProgress("");
-		return Json.Write(new JObj { ["items"] = items, ["pairs"] = list }, pretty: false);
+		return Json.Write(new JObj { ["items"] = items, ["pairs"] = list, ["files"] = same, ["noFfmpeg"] = !ffmpeg }, pretty: false);
 	}
 
-	/// <summary>本机创意工坊目录里每个壁纸：id、标题、类型、封面文件、大小、下载时间。</summary>
-	private List<JObj> LocalWallpapers()
+	/// <summary>
+	/// 本机创意工坊目录里每个壁纸：id、标题、类型、封面文件、大小、下载时间；视频壁纸还有视频文件（"video"）。
+	/// files 里收集每个壁纸 256 KB 以上的文件的指纹（找换了封面重新上传的同一个壁纸）。
+	/// </summary>
+	private List<JObj> LocalWallpapers(Dictionary<string, List<(string hash, long len)>> files)
 	{
 		var list = new List<JObj>();
-		foreach (string root in _engine.ResolvePaths().Workshop)
+		var dirs = _engine.ResolvePaths().Workshop.Where(Directory.Exists).SelectMany(Directory.GetDirectories)
+			.Where(d => Regex.IsMatch(Path.GetFileName(d), "^\\d+$")).ToList();
+		Parallel.ForEach(dirs, new ParallelOptions { MaxDegreeOfParallelism = 4 }, dir =>
 		{
-			if (!Directory.Exists(root))
+			string id = Path.GetFileName(dir);
+			try
 			{
-				continue;
-			}
-			foreach (string dir in Directory.GetDirectories(root))
-			{
-				string id = Path.GetFileName(dir);
-				if (!Regex.IsMatch(id, "^\\d+$"))
+				JObj pj = File.Exists(Path.Combine(dir, "project.json")) ? Json.ParseObj(File.ReadAllText(Path.Combine(dir, "project.json"), Encoding.UTF8)) : new JObj();
+				string preview = new[] { pj.Str("preview"), "preview.gif", "preview.jpg", "preview.png", "preview.jpeg" }
+					.Where(n => !string.IsNullOrEmpty(n) && n.IndexOfAny(Path.GetInvalidFileNameChars()) < 0).Select(n => Path.Combine(dir, n)).FirstOrDefault(File.Exists);
+				if (preview == null)
 				{
-					continue;
+					return;
 				}
-				try
+				// 大小；下载时间取最新文件的修改时间（文件夹本身的日期在整个库被复制过时不准）
+				long bytes = 0;
+				DateTime newest = DateTime.MinValue;
+				var big = new List<(string, long)>();
+				foreach (string f in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
 				{
-					JObj pj = File.Exists(Path.Combine(dir, "project.json")) ? Json.ParseObj(File.ReadAllText(Path.Combine(dir, "project.json"), Encoding.UTF8)) : new JObj();
-					string preview = new[] { pj.Str("preview"), "preview.gif", "preview.jpg", "preview.png", "preview.jpeg" }
-						.Where(n => !string.IsNullOrEmpty(n) && n.IndexOfAny(Path.GetInvalidFileNameChars()) < 0).Select(n => Path.Combine(dir, n)).FirstOrDefault(File.Exists);
-					if (preview == null)
+					var fi = new FileInfo(f);
+					bytes += fi.Length;
+					if (fi.LastWriteTimeUtc > newest)
 					{
-						continue;
+						newest = fi.LastWriteTimeUtc;
 					}
-					// 大小；下载时间取最新文件的修改时间（文件夹本身的日期在整个库被复制过时不准）
-					long bytes = 0;
-					DateTime newest = DateTime.MinValue;
-					foreach (string f in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+					string name = fi.Name.ToLowerInvariant();
+					if (fi.Length >= 256 << 10 && !name.StartsWith("preview.") && name != "project.json")
 					{
-						var fi = new FileInfo(f);
-						bytes += fi.Length;
-						if (fi.LastWriteTimeUtc > newest)
+						try
 						{
-							newest = fi.LastWriteTimeUtc;
+							big.Add((Dupes.FileHash(f, fi), fi.Length));
+						}
+						catch
+						{
 						}
 					}
-					list.Add(new JObj
-					{
-						["id"] = id,
-						["title"] = pj.Str("title"),
-						["type"] = pj.Str("type"),
-						["file"] = preview,
-						["bytes"] = bytes,
-						["added"] = (long)((newest > DateTime.MinValue ? newest : Directory.GetCreationTimeUtc(dir)) - new DateTime(1970, 1, 1)).TotalSeconds
-					});
 				}
-				catch
+				var o = new JObj
 				{
+					["id"] = id,
+					["title"] = pj.Str("title"),
+					["type"] = pj.Str("type"),
+					["file"] = preview,
+					["bytes"] = bytes,
+					["added"] = (long)((newest > DateTime.MinValue ? newest : Directory.GetCreationTimeUtc(dir)) - new DateTime(1970, 1, 1)).TotalSeconds
+				};
+				string main = pj.Str("file");
+				if (string.Equals(pj.Str("type"), "video", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(main) && main.IndexOfAny(Path.GetInvalidPathChars()) < 0 && File.Exists(Path.Combine(dir, main)))
+				{
+					o["video"] = Path.Combine(dir, main);
+				}
+				lock (list)
+				{
+					list.Add(o);
+					files[id] = big;
 				}
 			}
-		}
-		return list;
+			catch
+			{
+			}
+		});
+		Dupes.SaveFileHashes();
+		return list.OrderBy(o => o.Str("id"), StringComparer.Ordinal).ToList();
 	}
 
 	/// <summary>只在设备上的壁纸：从 Steam 读封面地址，下载到 dupes\previews（已经下载过的不再下载）。返回 id → 文件。</summary>

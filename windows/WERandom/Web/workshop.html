@@ -280,6 +280,12 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .dg .gh .grow { flex: 1; }
 .dg .gh a { color: var(--fg3); font-size: 12px; }
 .dgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+.nvgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+.nv { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.nv .thumb { cursor: pointer; }
+.nv .thumb img { object-fit: contain; }
+.nv .t { font-size: 12px; color: var(--fg); cursor: pointer; overflow-wrap: anywhere; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.nv button { margin-top: auto; }
 /* tiles of a group are equally tall (grid rows stretch); the space a shorter name leaves goes between the name and the
    details, so details, badges and buttons line up at the bottom */
 .dt { border-radius: 6px; padding: 6px; margin: -6px; display: flex; flex-direction: column; }
@@ -1438,7 +1444,7 @@ function toggleComments(a) {
 // cover from Steam. "保留这个": unsubscribe the others (subscribing account), move them on the devices to wer_trash,
 // and put the kept one on that device's "to send with WE" list.
 const dupe = { applied: null, data: null, loading: false, text: '', error: null, devices: null, devError: null, removed: new Set(), shown: 20, groups: [] };
-function dcfg() { return S.dupe = Object.assign({ min: 0.75, addrs: [], ignore: [], never: [], send: {}, onlyDevice: false }, S.dupe || {}); }
+function dcfg() { return S.dupe = Object.assign({ min: 0.75, addrs: [], ignore: [], never: [], send: {}, onlyDevice: false, recent: true }, S.dupe || {}); }
 const pairKey = (a, b) => a < b ? a + '|' + b : b + '|' + a;
 const onDevices = id => (dupe.devices || []).filter(d => d.ids.includes(id));
 const dupeTitle = it => it.title || (items.get(it.id) || {}).title || it.id;
@@ -1495,29 +1501,45 @@ function buildGroups() {
   const d = dupe.data; if (!d) return [];
   const c = dcfg(), ign = new Set(c.ignore), min = Math.round(c.min * 1000);
   const never = new Set(c.never);   // "永不对比": never compared with anything
-  const ok = (a, b) => dupeAlive(d.items[a]) && dupeAlive(d.items[b]) && !never.has(d.items[a].id) && !never.has(d.items[b].id) && !ign.has(pairKey(d.items[a].id, d.items[b].id));
+  const cut = Date.now() / 1000 - 365 * 86400;   // "只看一年内下载的": older ones were sorted out long ago
+  const fresh = it => !c.recent || it.remote || !it.added || it.added >= cut;
+  const ok = (a, b) => dupeAlive(d.items[a]) && dupeAlive(d.items[b]) && fresh(d.items[a]) && fresh(d.items[b])
+    && !never.has(d.items[a].id) && !never.has(d.items[b].id) && !ign.has(pairKey(d.items[a].id, d.items[b].id));
   // every two in a group must be similar enough (complete linkage). Joining by single pairs chained look-alikes
   // (A~B, B~C, C~D…) into one group of hundreds where most are not alike at all.
-  const n = d.items.length, near = new Set(), key = (a, b) => a < b ? a * n + b : b * n + a;
-  for (const [a, b, s] of d.pairs) { if (s < min) break; if (ok(a, b)) near.add(key(a, b)); }
-  const root = d.items.map((_, i) => i), members = new Map(), score = new Map();
-  for (const [a, b, s] of d.pairs) {   // most similar first
-    if (s < min) break; if (!near.has(key(a, b))) continue;
+  // Two kinds of evidence: pictures (cover, and video frames: kind 1) and the same big files (a re-upload).
+  const n = d.items.length, key = (a, b) => a < b ? a * n + b : b * n + a;
+  const look = new Map(), same = new Map();   // key → [score, kind] / share ‰
+  for (const [a, b, s, kind] of d.pairs) { if (s < min) break; if (ok(a, b)) look.set(key(a, b), [s, kind || 0]); }
+  for (const [a, b, f] of d.files || []) if (ok(a, b)) same.set(key(a, b), f);
+  const near = k => look.has(k) || same.has(k);
+  const edges = [...(d.files || []).map(([a, b]) => [a, b]), ...d.pairs.filter(p => p[2] >= min)];   // same files first: the surest
+  const root = d.items.map((_, i) => i), members = new Map();
+  for (const [a, b] of edges) {
+    if (!near(key(a, b))) continue;
     const ra = root[a], rb = root[b]; if (ra === rb) continue;
     const A = members.get(ra) || [a], B = members.get(rb) || [b];
-    if (!A.every(x => B.every(y => near.has(key(x, y))))) continue;
+    if (!A.every(x => B.every(y => near(key(x, y))))) continue;
     for (const y of B) root[y] = ra;
     members.set(ra, A.concat(B)); members.delete(rb);
-    score.set(ra, Math.max(score.get(ra) || 0, score.get(rb) || 0, s)); score.delete(rb);
   }
-  let groups = [...members.entries()].map(([r, list]) => Object.assign(list.map(i => d.items[i]), { score: score.get(r) }));
+  let groups = [...members.values()].map(list => {
+    const g = Object.assign(list.map(i => d.items[i]), { score: 0, video: false, files: 0 });
+    for (const x of list) for (const y of list) {
+      if (x >= y) continue;
+      const l = look.get(key(x, y)); if (l && l[0] > g.score) { g.score = l[0]; g.video = l[1] === 1; }
+      g.files = Math.max(g.files, same.get(key(x, y)) || 0);
+    }
+    return g;
+  });
   // a group keeps its place once shown: cancelling one can lower its best score or take away its device copy, which
   // would move it (or drop it from "only devices") and put another group where you were working
   const rk = dupe.rank || (dupe.rank = new Map());
   const known = g => g.some(it => rk.has(it.id));
   if (c.onlyDevice) groups = groups.filter(g => known(g) || g.some(it => onDevices(it.id).length));
   // groups touching a device first, then the closest matches
-  groups.sort((x, y) => (+y.some(it => onDevices(it.id).length) - +x.some(it => onDevices(it.id).length)) || y.score - x.score);
+  const strength = g => g.files ? 1000 + g.files / 1000 : g.score;   // the same files beat any picture score
+  groups.sort((x, y) => (+y.some(it => onDevices(it.id).length) - +x.some(it => onDevices(it.id).length)) || strength(y) - strength(x));
   for (const g of groups) g.rank = Math.min(...g.map(it => rk.get(it.id) ?? Infinity));
   for (const g of groups) if (g.rank === Infinity) g.rank = dupe.rankNext = (dupe.rankNext || 0) + 1;
   for (const g of groups) for (const it of g) if (!rk.has(it.id)) rk.set(it.id, g.rank);
@@ -1545,16 +1567,21 @@ function renderDupes(keepScroll) {
       <div>${ids.map(id => `<span class="it" title="${id}">${esc(dupeName(id))}<a data-dunsend="${esc(model)}|${id}" title="从列表里去掉">×</a></span>`).join('')}</div>
       <div class="dnote" style="margin:4px 0 0">在电脑上的 Wallpaper Engine 里选中这些壁纸，用「发送到手机」发过去。设备上有了以后，下次读取设备时会自动从列表里去掉。</div></div>`).join('')
     + (dupe.showNever && c.never.length ? `<div class="sendbox"><div class="h"><span>永不对比的壁纸（${c.never.length} 个）</span><span class="grow"></span><button data-dunnever="*">全部恢复</button><button data-dnevlist>收起</button></div>
-      <div>${c.never.map(id => `<span class="it" title="${id}">${esc(dupeName(id))}<a data-dunnever="${id}" title="恢复：以后又和其他壁纸比较">×</a></span>`).join('')}</div></div>` : '');
+      <div class="nvgrid">${c.never.map(id => { const it = dupe.data && dupe.data.items.find(x => x.id === id); return `<div class="nv">
+        <div class="thumb" data-ddetail="${id}" title="看详情">${it && it.img ? `<img loading="lazy" src="${esc(it.img)}" alt="">` : ''}</div>
+        <a class="t" data-ddetail="${id}" title="${id}">${esc(dupeName(id))}</a>
+        <button data-dunnever="${id}" title="恢复：以后又和其他壁纸比较">恢复</button></div>`; }).join('')}</div></div>` : '');
   const total = dupe.data ? dupe.data.items.length : 0;
   const compact = document.body.classList.contains('compact');
   $('#mainhead').innerHTML = `<div class="dbar"><button class="primary" data-dscan${dupe.loading ? ' disabled' : ''}>${dupe.data ? '重新查找' : '开始查找'}</button>
       <button data-dcompact title="${compact ? '回到原来的窗口' : '窗口缩到屏幕右边并置顶，只留查重；点「应用」后直接看桌面对比'}">${compact ? '退出小窗' : '小窗对比'}</button>
       <label title="越往右越严格：只有几乎一样的才算一组；往左会把同一个人物的不同动作也算进来，但也更容易把画风相近的不同人物算进来">相似度 <input type="range" id="dmin" min="0.65" max="0.99" step="0.01" value="${c.min}"> <span class="num" id="dminv">${Math.round(c.min * 100)}%</span></label>
       <label><input type="checkbox" id="donly"${c.onlyDevice ? ' checked' : ''}> 只看平板 / 手机上有的</label>
+      <label title="下载超过一年的壁纸不参与比较（视频画面也只截一年内的）"><input type="checkbox" id="drecent"${c.recent ? ' checked' : ''}> 只看一年内下载的</label>
       ${c.never.length ? `<button class="ghost" data-dnevlist title="这些壁纸不和任何壁纸比较；点开可以恢复">永不对比（${c.never.length}）</button>` : ''}
       <span id="dstatus"></span><span class="grow" style="flex:1"></span>
-      ${dupe.data ? `<span>${total} 个壁纸，${dupe.groups.length} 组相似</span>` : ''}</div>
+      ${dupe.data ? `<span>${total} 个壁纸，${dupe.groups.length} 组相似</span>` : ''}
+      ${dupe.data && dupe.data.noFfmpeg ? '<span title="装了 ffmpeg（比如 scoop install ffmpeg）以后，会再截视频里的画面来比较">没找到 ffmpeg，只比了封面和文件</span>' : ''}</div>
     <div class="devs">${devHtml}<button class="ghost" data-ddev>读取设备</button><input id="daddr" placeholder="无线 adb 地址，如 192.168.1.20:5555" value="${esc(c.addrs.join(', '))}" title="每次读取设备前先连接这些地址（多个用逗号分开）"></div>`;
   main.innerHTML = `${sendHtml}<div id="dlist"></div>`;
   paintDupeStatus();
@@ -1588,12 +1615,15 @@ function renderDupes(keepScroll) {
   };
   r.onchange = () => { c.min = +r.value; save(); dupe.shown = 20; dupe.rank = null; dupe.sliding = false; dupe.renderLater = false; renderDupes(); };
   $('#donly').onchange = e => { c.onlyDevice = e.target.checked; save(); dupe.shown = 20; dupe.rank = null; renderDupes(); };
+  $('#drecent').onchange = e => { c.recent = e.target.checked; save(); dupe.shown = 20; dupe.rank = null; renderDupes(); };
   $('#daddr').onchange = e => { c.addrs = e.target.value.split(/[,，\s]+/).map(x => x.trim()).filter(Boolean); save(); };
   if (keepScroll) main.scrollTop = top;
   if (dupe.data) loadDupeDetails();
 }
 function groupDupeHtml(g, gi) {
-  return `<div class="dg" data-g="${gi}"><div class="gh"><span>${g.length} 个相似，最像的两个 ${Math.round(g.score / 10)}%，不要的点「取消这个」</span><span class="grow"></span><a data-dnot="${gi}" title="这一组以后不再提示">这组不是重复</a></div>
+  const why = [g.files ? `有 ${Math.round(g.files / 10)}% 的文件相同（换了封面重新上传的）` : '',
+    g.score ? `最像的两个 ${Math.round(g.score / 10)}%${g.video ? '（视频画面，封面不像）' : ''}` : ''].filter(Boolean).join('，');
+  return `<div class="dg" data-g="${gi}"><div class="gh"><span>${g.length} 个相似，${why}，不要的点「取消这个」</span><span class="grow"></span><a data-dnot="${gi}" title="这一组以后不再提示">这组不是重复</a></div>
     <div class="dgrid">${g.map(it => dupeTileHtml(it, gi, g)).join('')}</div></div>`;
 }
 function dupeTileHtml(it, gi, g) {

@@ -75,14 +75,22 @@ public sealed class DupeFinder
 
 		/// <summary>每帧的颜色分布（HSV 12×4×4 格，和为 1）。</summary>
 		public float[][] Hists;
+
+		/// <summary>前几帧是封面，后面的是视频画面（比较时用来说明是哪种相似；不存进缓存）。</summary>
+		public int CoverCount;
 	}
 
-	/// <summary>要比较的一个壁纸：Key 是 id（电脑里的）或 "r:" + id（Steam 上下载的封面），Image 是封面文件。</summary>
+	/// <summary>
+	/// 要比较的一个壁纸：Key 是 id（电脑里的）或 "r:" + id（Steam 上下载的封面），Image 是封面文件。
+	/// Video = true 时 Image 是视频文件，Key 是 "v:" + id：用 ffmpeg 截 4 帧画面。
+	/// </summary>
 	public sealed class Source
 	{
 		public string Key;
 
 		public string Image;
+
+		public bool Video;
 	}
 
 	public sealed class Pair
@@ -92,6 +100,281 @@ public sealed class DupeFinder
 		public int B;
 
 		public float Score;
+
+		/// <summary>只看封面没这么像，是视频画面像。</summary>
+		public bool Video;
+	}
+
+	// ---- ffmpeg (video frames) ----
+
+	private static string _ffmpeg;
+
+	private static bool _ffmpegLooked;
+
+	/// <summary>找 ffmpeg.exe：scoop 装的、PATH 里的、常见目录。找不到返回 null（那就只比封面和文件）。</summary>
+	public static string Ffmpeg
+	{
+		get
+		{
+			if (_ffmpegLooked)
+			{
+				return _ffmpeg;
+			}
+			_ffmpegLooked = true;
+			string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+			var dirs = new List<string> { Path.Combine(home, "scoop", "apps", "ffmpeg", "current", "bin") };
+			dirs.AddRange((Environment.GetEnvironmentVariable("PATH") ?? "").Split(';').Where(d => d.Trim().Length > 0));
+			dirs.Add(Path.Combine(home, "scoop", "shims"));
+			dirs.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "ffmpeg", "bin"));
+			dirs.Add(@"C:\ffmpeg\bin");
+			foreach (string d in dirs)
+			{
+				try
+				{
+					string p = Path.Combine(d.Trim().Trim('"'), "ffmpeg.exe");
+					if (File.Exists(p))
+					{
+						return _ffmpeg = p;
+					}
+				}
+				catch
+				{
+				}
+			}
+			return null;
+		}
+	}
+
+	/// <summary>运行 ffmpeg，返回标准输出（截的图）和错误输出（时长在里面）。超时 60 秒。</summary>
+	private static byte[] RunFfmpeg(string args, out string err)
+	{
+		var info = new System.Diagnostics.ProcessStartInfo(Ffmpeg, args)
+		{
+			UseShellExecute = false,
+			CreateNoWindow = true,
+			RedirectStandardOutput = true,
+			RedirectStandardError = true,
+			StandardErrorEncoding = Encoding.UTF8
+		};
+		using var p = System.Diagnostics.Process.Start(info);
+		try
+		{
+			p.PriorityClass = System.Diagnostics.ProcessPriorityClass.BelowNormal;
+		}
+		catch
+		{
+		}
+		Task<string> errTask = p.StandardError.ReadToEndAsync();
+		using var ms = new MemoryStream();
+		Task copy = p.StandardOutput.BaseStream.CopyToAsync(ms);
+		if (!p.WaitForExit(60000))
+		{
+			try
+			{
+				p.Kill();
+			}
+			catch
+			{
+			}
+			err = "";
+			return null;
+		}
+		copy.Wait(5000);
+		err = errTask.Wait(5000) ? errTask.Result : "";
+		return ms.ToArray();
+	}
+
+	/// <summary>视频在 15%、40%、65%、90% 处各截一帧（短边缩到 320），跳过纯色帧。</summary>
+	private static List<(float[] px, float[] hist)> VideoFramePixels(string path)
+	{
+		if (Ffmpeg == null)
+		{
+			throw new IOException("没找到 ffmpeg");
+		}
+		RunFfmpeg("-hide_banner -i \"" + path + "\"", out string info);
+		System.Text.RegularExpressions.Match m = System.Text.RegularExpressions.Regex.Match(info ?? "", @"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)");
+		double dur = m.Success ? int.Parse(m.Groups[1].Value) * 3600 + int.Parse(m.Groups[2].Value) * 60 + double.Parse(m.Groups[3].Value, System.Globalization.CultureInfo.InvariantCulture) : 0;
+		var list = new List<(float[] px, float[] hist)>();
+		foreach (double f in new[] { 0.15, 0.40, 0.65, 0.90 })
+		{
+			string at = (dur * f).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+			byte[] png = RunFfmpeg("-v error -ss " + at + " -i \"" + path + "\" -frames:v 1 -vf \"scale='if(gt(iw,ih),-2,320)':'if(gt(iw,ih),320,-2)'\" -f image2pipe -vcodec png -", out _);
+			if (png == null || png.Length == 0)
+			{
+				continue;
+			}
+			using var ms = new MemoryStream(png);
+			using Image img = Image.FromStream(ms);
+			float[] px = Pixels(img, out float spread);
+			if (spread >= 0.05f)
+			{
+				list.Add((px, Histogram(img)));
+			}
+		}
+		return list;
+	}
+
+	// ---- same files ----
+
+	private readonly Dictionary<string, (long len, long ticks, string hash)> _fileHashes = new Dictionary<string, (long, long, string)>(StringComparer.OrdinalIgnoreCase);
+
+	private bool _fileHashesLoaded;
+
+	private string FileHashPath => Path.Combine(_dir, "files.bin");
+
+	/// <summary>
+	/// 大文件的指纹（大小 + 开头 1 MB + 结尾 1 MB 的 MD5），按路径、大小、修改时间缓存。
+	/// 两个壁纸有相同的大文件（视频本体、场景包、网页素材），多半是换了封面重新上传的同一个壁纸。
+	/// </summary>
+	public string FileHash(string path, FileInfo fi)
+	{
+		lock (_fileHashes)
+		{
+			if (!_fileHashesLoaded)
+			{
+				_fileHashesLoaded = true;
+				LoadFileHashes();
+			}
+			if (_fileHashes.TryGetValue(path, out var c) && c.len == fi.Length && c.ticks == fi.LastWriteTimeUtc.Ticks)
+			{
+				return c.hash;
+			}
+		}
+		string hash;
+		using (var md5 = System.Security.Cryptography.MD5.Create())
+		using (FileStream fs = File.OpenRead(path))
+		{
+			byte[] head = Encoding.ASCII.GetBytes(fi.Length.ToString());
+			md5.TransformBlock(head, 0, head.Length, null, 0);
+			var buf = new byte[1 << 20];
+			int n = fs.Read(buf, 0, buf.Length);
+			md5.TransformBlock(buf, 0, n, null, 0);
+			if (fi.Length > 2 << 20)
+			{
+				fs.Seek(-(1 << 20), SeekOrigin.End);
+				n = fs.Read(buf, 0, buf.Length);
+				md5.TransformBlock(buf, 0, n, null, 0);
+			}
+			md5.TransformFinalBlock(new byte[0], 0, 0);
+			hash = BitConverter.ToString(md5.Hash).Replace("-", "");
+		}
+		lock (_fileHashes)
+		{
+			_fileHashes[path] = (fi.Length, fi.LastWriteTimeUtc.Ticks, hash);
+		}
+		return hash;
+	}
+
+	private void LoadFileHashes()
+	{
+		try
+		{
+			if (!File.Exists(FileHashPath))
+			{
+				return;
+			}
+			using var r = new BinaryReader(File.OpenRead(FileHashPath), Encoding.UTF8);
+			if (r.ReadString() != "WERFILES1")
+			{
+				return;
+			}
+			int count = r.ReadInt32();
+			for (int i = 0; i < count; i++)
+			{
+				string p = r.ReadString();
+				_fileHashes[p] = (r.ReadInt64(), r.ReadInt64(), r.ReadString());
+			}
+		}
+		catch (Exception ex)
+		{
+			_fileHashes.Clear();
+			_log.Log("查重：读文件指纹缓存失败，重新计算：" + ex.Message);
+		}
+	}
+
+	public void SaveFileHashes()
+	{
+		try
+		{
+			Directory.CreateDirectory(_dir);
+			string tmp = FileHashPath + ".tmp";
+			lock (_fileHashes)
+			{
+				using var w = new BinaryWriter(File.Create(tmp), Encoding.UTF8);
+				w.Write("WERFILES1");
+				w.Write(_fileHashes.Count);
+				foreach (KeyValuePair<string, (long len, long ticks, string hash)> kv in _fileHashes)
+				{
+					w.Write(kv.Key);
+					w.Write(kv.Value.len);
+					w.Write(kv.Value.ticks);
+					w.Write(kv.Value.hash);
+				}
+			}
+			if (File.Exists(FileHashPath))
+			{
+				File.Replace(tmp, FileHashPath, null);
+			}
+			else
+			{
+				File.Move(tmp, FileHashPath);
+			}
+		}
+		catch (Exception ex)
+		{
+			_log.Log("查重：保存文件指纹缓存失败：" + ex.Message);
+		}
+	}
+
+	/// <summary>
+	/// 有相同大文件的组合：相同文件的大小占两者中较小那个的比例 ≥ minShare。一个文件被 7 个以上壁纸共用时不算（通用素材）。
+	/// files：id → 它的大文件（指纹, 大小）。返回 (id, id, 比例)。
+	/// </summary>
+	public static List<(string a, string b, float share)> SameFiles(Dictionary<string, List<(string hash, long len)>> files, float minShare)
+	{
+		var owners = new Dictionary<string, (long len, List<string> ids)>();
+		var total = new Dictionary<string, long>();
+		foreach (KeyValuePair<string, List<(string hash, long len)>> kv in files)
+		{
+			total[kv.Key] = kv.Value.Sum(x => x.len);
+			foreach ((string hash, long len) in kv.Value)
+			{
+				if (!owners.TryGetValue(hash, out var o))
+				{
+					owners[hash] = o = (len, new List<string>());
+				}
+				if (!o.ids.Contains(kv.Key))
+				{
+					o.ids.Add(kv.Key);
+				}
+			}
+		}
+		var common = new Dictionary<(string, string), long>();
+		foreach ((long len, List<string> ids) in owners.Values)
+		{
+			if (ids.Count < 2 || ids.Count > 6)
+			{
+				continue;
+			}
+			for (int i = 0; i < ids.Count; i++)
+			{
+				for (int j = i + 1; j < ids.Count; j++)
+				{
+					var k = string.CompareOrdinal(ids[i], ids[j]) < 0 ? (ids[i], ids[j]) : (ids[j], ids[i]);
+					common[k] = (common.TryGetValue(k, out long c) ? c : 0) + len;
+				}
+			}
+		}
+		var result = new List<(string, string, float)>();
+		foreach (KeyValuePair<(string, string), long> kv in common)
+		{
+			float share = (float)kv.Value / Math.Max(1, Math.Min(total[kv.Key.Item1], total[kv.Key.Item2]));
+			if (share >= minShare)
+			{
+				result.Add((kv.Key.Item1, kv.Key.Item2, Math.Min(1, share)));
+			}
+		}
+		return result;
 	}
 
 	// ---- model ----
@@ -237,25 +520,49 @@ public sealed class DupeFinder
 			pendingFrames.Clear();
 		}
 		var finished = new List<int>();
+		// pictures are read (and videos decoded by ffmpeg) several at a time; the model then takes them in batches
+		const int chunk = 24;
+		var read = new List<(float[] px, float[] hist)>[chunk];
+		var errors = new Exception[chunk];
+		var popts = new ParallelOptions { MaxDegreeOfParallelism = Math.Max(2, Math.Min(6, Environment.ProcessorCount / 2)), CancellationToken = ct };
 		for (int k = 0; k < todo.Count; k++)
 		{
 			ct.ThrowIfCancellationRequested();
-			try
+			int slot = k % chunk;
+			if (slot == 0)
 			{
-				foreach ((float[] px, float[] hist) in FramePixels(todo[k].src.Image))
+				int start = k, end = Math.Min(todo.Count, k + chunk);
+				Parallel.For(start, end, popts, i =>
+				{
+					try
+					{
+						read[i - start] = todo[i].src.Video ? VideoFramePixels(todo[i].src.Image) : FramePixels(todo[i].src.Image);
+						errors[i - start] = null;
+					}
+					catch (Exception ex)
+					{
+						read[i - start] = null;
+						errors[i - start] = ex;
+					}
+				});
+			}
+			if (errors[slot] != null)
+			{
+				failed++;
+				if (failed <= 5)
+				{
+					_log.Log("查重：读不了" + (todo[k].src.Video ? "视频 " : "封面 ") + todo[k].src.Image + "：" + errors[slot].Message);
+				}
+			}
+			else
+			{
+				foreach ((float[] px, float[] hist) in read[slot])
 				{
 					pendingFrames.Add((k, px));
 					(hists[k] ??= new List<float[]>()).Add(hist);
 				}
 			}
-			catch (Exception ex)
-			{
-				failed++;
-				if (failed <= 5)
-				{
-					_log.Log("查重：读不了封面 " + todo[k].src.Image + "：" + ex.Message);
-				}
-			}
+			read[slot] = null;
 			finished.Add(k);
 			if (pendingFrames.Count >= batch || k == todo.Count - 1)
 			{
@@ -267,6 +574,11 @@ public sealed class DupeFinder
 						var e = new Entry { Key = todo[f].src.Key, Stamp = todo[f].stamp, Vectors = vectors[f].ToArray(), Hists = hists[f].ToArray() };
 						_cache[e.Key] = e;
 						result.Add(e);
+					}
+					else if (todo[f].src.Video && Ffmpeg != null)
+					{
+						// no usable frame (all black, or ffmpeg can't read it): remember that, don't decode it every time
+						_cache[todo[f].src.Key] = new Entry { Key = todo[f].src.Key, Stamp = todo[f].stamp, Vectors = new float[0][], Hists = new float[0][] };
 					}
 				}
 				done += finished.Count;
@@ -280,7 +592,8 @@ public sealed class DupeFinder
 			}
 		}
 		SaveCache();
-		_log.Log("查重：新算了 " + (done - failed) + " 个壁纸的封面" + (failed > 0 ? "，" + failed + " 个读不了" : ""));
+		int videos = todo.Count(t => t.src.Video);
+		_log.Log("查重：新算了 " + (done - failed) + " 个（封面 " + (todo.Count - videos) + "、视频 " + videos + "）" + (failed > 0 ? "，" + failed + " 个读不了" : ""));
 		return result;
 	}
 
@@ -478,7 +791,17 @@ public sealed class DupeFinder
 				float s = (d + MaxOverlap(entries[i].Hists, entries[j].Hists)) / 2;
 				if (s >= min)
 				{
-					(found[i] ??= new List<Pair>()).Add(new Pair { A = i, B = j, Score = s });
+					// with video frames: would the covers alone have been as close?
+					bool video = false;
+					Entry ei = entries[i], ej = entries[j];
+					if (ei.CoverCount < ei.Vectors.Length || ej.CoverCount < ej.Vectors.Length)
+					{
+						float[][] ci = ei.Vectors.Take(ei.CoverCount).ToArray(), cj = ej.Vectors.Take(ej.CoverCount).ToArray();
+						float dc = ci.Length > 0 && cj.Length > 0 ? MaxDot(ci, cj) : -1;
+						float sc = dc < 2 * min - 1 ? -1 : (dc + MaxOverlap(ei.Hists.Take(ei.CoverCount).ToArray(), ej.Hists.Take(ej.CoverCount).ToArray())) / 2;
+						video = sc < min;
+					}
+					(found[i] ??= new List<Pair>()).Add(new Pair { A = i, B = j, Score = s, Video = video });
 				}
 			}
 		});
@@ -612,7 +935,7 @@ public sealed class DupeFinder
 					w.Write(e.Key);
 					w.Write(e.Stamp);
 					w.Write(e.Vectors.Length);
-					w.Write(e.Vectors[0].Length);
+					w.Write(e.Vectors.Length > 0 ? e.Vectors[0].Length : 0);   // a video with no usable frame is kept empty, so it isn't decoded again
 					for (int f = 0; f < e.Vectors.Length; f++)
 					{
 						WriteFloats(w, e.Vectors[f]);
