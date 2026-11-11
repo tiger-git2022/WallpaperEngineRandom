@@ -99,34 +99,7 @@ fun NewsPage() {
             (info.visibleItemsInfo.lastOrNull()?.index ?: 0) >= info.totalItemsCount - 4
         }.collect { near -> if (near && feed.keys.isNotEmpty()) feed.loadMore() }
     }
-    // 看过：在屏幕上出现过、之后往下滚把它整个滚出了屏幕顶部（顶栏下面），才算看过；还在屏幕上的「新」一直留着
-    LaunchedEffect(feed) {
-        val shown = HashSet<String>()
-        snapshotFlow { list.layoutInfo }.collect { info ->
-            val vis = info.visibleItemsInfo
-            val firstEntry = vis.firstOrNull { isEntryKey(it.key) && it.offset + it.size > 0 }?.key as? String
-            for (it in vis) {
-                val k = it.key as? String ?: continue
-                if (!isEntryKey(k)) continue
-                if (it.offset + it.size <= 0) {
-                    if (k in shown) feed.markSeen(k)
-                } else {
-                    shown.add(k)
-                }
-            }
-            // 滚出可见范围的：在第一条看得见的前面就是往上滚出去了
-            if (firstEntry != null) {
-                val fi = feed.keys.indexOf(firstEntry)
-                val gone = shown.filter { k -> vis.none { v -> v.key == k } }
-                for (k in gone) {
-                    val i = feed.keys.indexOf(k)
-                    if (i in 0 until fi) feed.markSeen(k)
-                    shown.remove(k)
-                }
-            }
-        }
-    }
-    // 打开时回到上次的位置：那一条还在就滚过去，否则停在「上次看到这里」
+    // 打开时回到上次的位置：那一条还在就滚过去，否则停在已读线（刚看过的地方）
     LaunchedEffect(feed.settled) {
         if (!feed.settled || feed.restored) return@LaunchedEffect
         feed.restored = true
@@ -146,7 +119,7 @@ fun NewsPage() {
         }
     }
 
-    Refreshable(refreshing = feed.refreshing, onRefresh = { feed.refresh(manual = true) }) {
+    Refreshable(refreshing = feed.refreshing && feed.manualRefresh, onRefresh = { feed.refresh(manual = true) }) {
         LazyColumn(
             state = list,
             contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = pad.calculateTopPadding(), bottom = pad.calculateBottomPadding()),
@@ -165,7 +138,7 @@ fun NewsPage() {
                 }
             }
             keys.forEachIndexed { i, k ->
-                if (i == divider) item("divider") { LastSeenDivider() }
+                if (i == divider) item("divider") { ReadLine(store.divAt) }
                 val it = feed.items[k] ?: return@forEachIndexed
                 item(k) { NewsCard(it) }
             }
@@ -184,32 +157,59 @@ private fun layoutKeys(feed: NewsFeed): List<String> = buildList {
     }
 }
 
+/** 和壁纸动态的标题行一样：标题、未读数、全部已读；下面是筛选。 */
 @Composable
 private fun NewsHeader() {
     val feed = news
     val store = feed.store
-    val scope = rememberCoroutineScope()
     Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp)) {
-        PillRow {
-            Pill(if (feed.unread > 0) "全部 · ${if (feed.unread > 99) "99+" else feed.unread} 条未读" else "全部", onClick = { feed.setFilter("all") }, selected = store.filter == "all", shape = ButtonShape)
-            Pill("只看新发售", onClick = { feed.setFilter("release") }, selected = store.filter == "release", shape = ButtonShape)
-            if (feed.dividerIndex() > 0) {
-                Pill("上次看到这里", shape = ButtonShape, leading = Icons.Default.VerticalAlignCenter, onClick = {
-                    val i = layoutKeys(feed).indexOf("divider")
-                    if (i > 0) scope.launch { feed.list.animateScrollToItem(i) }
-                })
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("关注的游戏和发行商的新闻", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+            if (feed.unread > 0 && store.filter == "all") {
+                Spacer(Modifier.width(8.dp))
+                Badge(if (feed.unread > 99) "99+ 未读" else "${feed.unread} 条未读", background = Tones.New)
+                Spacer(Modifier.weight(1f))
+                Pill("全部已读", onClick = { feed.markAllRead() }, leading = Icons.Default.DoneAll, shape = ButtonShape)
             }
-            if (feed.unread > 0 && store.filter == "all") Pill("全部已读", shape = ButtonShape, leading = Icons.Default.DoneAll, onClick = { feed.markAllRead() })
+        }
+        PillRow(Modifier.padding(top = 10.dp)) {
+            Pill("全部", onClick = { feed.setFilter("all") }, selected = store.filter == "all", shape = ButtonShape)
+            Pill("只看新发售", onClick = { feed.setFilter("release") }, selected = store.filter == "release", shape = ButtonShape)
         }
     }
 }
 
+/** 和壁纸动态一样的已读线：打开时定下位置，下拉刷新后才移动。 */
 @Composable
-private fun LastSeenDivider() {
+private fun ReadLine(upTo: Long) {
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        HorizontalDivider(Modifier.weight(1f), color = Tones.New.copy(alpha = 0.7f))
-        Text("上次看到这里", fontSize = 12.sp, color = Tones.New, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 10.dp))
-        HorizontalDivider(Modifier.weight(1f), color = Tones.New.copy(alpha = 0.7f))
+        HorizontalDivider(Modifier.weight(1f))
+        Text(
+            "以下是已经看过的（${date(upTo)} 之前）",
+            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 10.dp),
+        )
+        HorizontalDivider(Modifier.weight(1f))
+    }
+}
+
+/** 和壁纸动态的 trackSeen 一样：露出 60% 以上（或露出的部分占了大半个屏幕）并停留 0.7 秒，记为看过。 */
+@Composable
+private fun Modifier.newsSeen(key: String, enabled: Boolean): Modifier {
+    if (!enabled) return this
+    val viewport = LocalViewport.current
+    var visible by remember(key) { mutableStateOf(false) }
+    LaunchedEffect(key, visible) {
+        if (visible) {
+            delay(700)
+            news.markSeen(key)
+        }
+    }
+    return onGloballyPositioned { c ->
+        val b = c.boundsInRoot()
+        val vp = viewport.value
+        val h = c.size.height.toFloat()
+        val shown = minOf(b.bottom, vp.bottom) - maxOf(b.top, vp.top)
+        visible = h > 0 && shown > 0 && (shown / h >= 0.6f || shown >= vp.height * 0.6f)
     }
 }
 
@@ -251,11 +251,12 @@ private fun NewsCard(it: NewsItem) {
                 }
             } else {
                 feed.expanded[it.key] = true
+                feed.markSeen(it.key)
             }
         }
     }
     Column(
-        Modifier.fillMaxWidth().card(RoundedCornerShape(22.dp))
+        Modifier.fillMaxWidth().newsSeen(it.key, feed.isNew(it)).card(RoundedCornerShape(22.dp))
             .clickable(enabled = it.kind == "event", onClick = toggle)
             .padding(14.dp),
     ) {
@@ -323,7 +324,7 @@ private fun SourceRow(it: NewsItem) {
                 )
                 if (feed.isNew(it)) {
                     Spacer(Modifier.width(6.dp))
-                    Badge("新", background = Tones.New)
+                    Badge("NEW", background = Tones.New)
                 }
                 it.release?.let { r ->
                     Spacer(Modifier.width(6.dp))

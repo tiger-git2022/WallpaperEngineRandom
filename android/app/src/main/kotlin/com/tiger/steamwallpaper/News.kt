@@ -142,6 +142,10 @@ class NewsFeed(val session: StoreSession, val store: NewsStore, private val cach
         private set
     var refreshing by mutableStateOf(false)
         private set
+
+    /** 这次刷新是手动的（下拉、点标签）：只有这时才显示下拉刷新的那滴玻璃，后台自动刷新只在顶栏转圈。 */
+    var manualRefresh by mutableStateOf(false)
+        private set
     var progress by mutableStateOf("")
         private set
     var error by mutableStateOf("")
@@ -272,15 +276,14 @@ class NewsFeed(val session: StoreSession, val store: NewsStore, private val cach
     /** [manual]：手动刷新（下拉、点标签）：「上次看到这里」先隐藏，下次离开时再记。 */
     fun refresh(manual: Boolean) {
         if (refreshing) return
-        if (manual) {
-            store.divAt = 0
-            store.save()
-        }
+        // 手动刷新（下拉、点标签）：已读线等刷新完重新加载时移到现在的阅读进度（和壁纸动态一样）
+        if (manual) dividerFixed = false
         if (!session.loggedIn) {
             error = "还没有登录 Steam"
             return
         }
         refreshing = true
+        manualRefresh = manual
         error = ""
         scope.launch {
             val found = mutableListOf<String>()
@@ -983,7 +986,6 @@ class NewsFeed(val session: StoreSession, val store: NewsStore, private val cach
         }
         if (store.readUpTo == 0L) {
             store.readUpTo = items[keys[0]]?.t ?: 0
-            store.divAt = store.readUpTo
             store.save()
             App.instance.workshop.toast("从现在开始记录新闻的阅读进度")
         }
@@ -993,9 +995,16 @@ class NewsFeed(val session: StoreSession, val store: NewsStore, private val cach
             loadMore()
             return
         }
+        // 已读线：每次打开（和下拉刷新后）加载完时定下来，之后不跟着阅读进度动
+        if (!dividerFixed) {
+            store.divAt = store.readUpTo
+            dividerFixed = true
+        }
         updateBoundary()
         settled = true
     }
+
+    private var dividerFixed = false
 
     private fun updateBoundary() {
         val b = boundaryIndex()
@@ -1045,10 +1054,8 @@ class NewsFeed(val session: StoreSession, val store: NewsStore, private val cach
         updateUnread()
     }
 
-    /** 离开 App（切到后台、退出）：把「上次看到这里」记在现在的阅读进度。 */
+    /** 离开 App（切到后台、退出）：马上保存阅读进度和位置。 */
     fun leave() {
-        if (store.readUpTo <= 0) return
-        store.divAt = store.readUpTo
         store.saveNow()
     }
 
