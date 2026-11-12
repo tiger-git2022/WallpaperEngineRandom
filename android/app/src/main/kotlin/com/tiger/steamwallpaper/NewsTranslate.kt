@@ -77,12 +77,12 @@ class NewsTranslate(private val feed: NewsFeed, private val store: NewsStore, pr
         return !s.orig && (s.done || s.busy) && (s.title.isNotEmpty() || s.summary.isNotEmpty() || s.body.isNotEmpty())
     }
 
-    fun title(it: NewsItem): String = posts[it.key]?.takeIf { shown(it.key) }?.title?.ifEmpty { null } ?: it.title
-    fun body(it: NewsItem): String = posts[it.key]?.takeIf { shown(it.key) }?.body?.ifEmpty { null } ?: it.body
+    fun title(item: NewsItem): String = posts[item.key]?.takeIf { shown(item.key) }?.title?.ifEmpty { null } ?: item.title
+    fun body(item: NewsItem): String = posts[item.key]?.takeIf { shown(item.key) }?.body?.ifEmpty { null } ?: item.body
 
     /** 收起时的摘要：译文的摘要，没有就用译文正文的开头。 */
-    fun summary(it: NewsItem, original: String): String {
-        val s = posts[it.key]?.takeIf { shown(it.key) } ?: return original
+    fun summary(item: NewsItem, original: String): String {
+        val s = posts[item.key]?.takeIf { shown(item.key) } ?: return original
         return s.summary.ifEmpty { if (s.body.isNotEmpty()) bbPlain(s.body) else original }
     }
 
