@@ -722,9 +722,24 @@ class Workshop(val steam: Steam, val sub: Steam, val store: Store, private val s
     /** 订阅用的账号的 Steam ID（Compose 状态，界面里读它会跟着变）。 */
     val subscriberId: String get() = if (subMe.loggedIn) subMe.steamId else me.steamId
 
-    /** 在这个 App 里订阅过的，或者订阅账号在 Steam 上的订阅列表里有的。 */
-    fun isSubscribed(id: String) =
-        store.subscribed.containsKey(id) || (store.remoteSubsOwner.isNotEmpty() && store.remoteSubsOwner == subscriberId && store.remoteSubs.containsKey(id))
+    /**
+     * 订阅了没有：刚在 App 里点过的以点的为准；否则读过订阅账号在 Steam 上的订阅列表就按列表（在电脑上取消的也能看出来），
+     * 没读过才用 App 里记下的。
+     */
+    fun isSubscribed(id: String): Boolean {
+        val owner = subscriberId
+        localSub["$owner/$id"]?.let { return it }
+        return if (store.remoteSubsOwner.isNotEmpty() && store.remoteSubsOwner == owner) store.remoteSubs.containsKey(id) else store.subscribed.containsKey(id)
+    }
+
+    /**
+     * 在 App 里刚订阅 / 取消订阅的（「账号/壁纸 ID」→ 订阅了没有）和时间。点之前开始读的、或点完一分钟内读到的网页和订阅列表
+     * 可能还是旧的（Steam 的列表要过一会才更新），不能拿来盖掉它。
+     */
+    private val localSub = mutableStateMapOf<String, Boolean>()
+    private val localSubAt = HashMap<String, Long>()
+
+    private fun changedSince(owner: String, id: String, started: Long) = (localSubAt["$owner/$id"] ?: 0L) >= started - 60_000L
 
     var subsLoading by mutableStateOf(false)
         private set
@@ -744,6 +759,7 @@ class Workshop(val steam: Steam, val sub: Steam, val store: Store, private val s
         subsError = null
         subsProgress = 0f
         subsStatus = "正在读取第 1 页…"
+        val started = System.currentTimeMillis()
         scope.launch {
             try {
                 val all = LinkedHashSet<String>()
@@ -772,8 +788,22 @@ class Workshop(val steam: Steam, val sub: Steam, val store: Store, private val s
                     }
                 }.awaitAll()
                 if (acct.steamId == owner) {
+                    // 有几页没读到：以前读到的先留着，免得把订阅了的显示成没订阅
+                    if (failed > 0 && store.remoteSubsOwner == owner) all.addAll(store.remoteSubs.keys)
                     store.remoteSubs.clear()
                     all.forEach { store.remoteSubs[it] = true }
+                    // 读的时候（或之前一分钟内）在 App 里点过的以点的为准；更早点的，列表已经是新的了，按列表
+                    for ((k, at) in localSubAt) {
+                        if (!k.startsWith("$owner/")) continue
+                        val id = k.substringAfter('/')
+                        if (at >= started - 60_000L) {
+                            if (localSub[k] == true) store.remoteSubs[id] = true else store.remoteSubs.remove(id)
+                        } else {
+                            localSub.remove(k)
+                        }
+                    }
+                    // App 里记下的、但已经不在订阅列表里的（在电脑上或网页上取消了）：去掉
+                    if (failed == 0) store.subscribed.keys.filter { it !in store.remoteSubs }.forEach { store.subscribed.remove(it) }
                     store.remoteSubsOwner = owner
                     store.remoteSubsTime = System.currentTimeMillis()
                     store.remoteSubsTotal = total
@@ -806,8 +836,13 @@ class Workshop(val steam: Steam, val sub: Steam, val store: Store, private val s
         val acct = subscriber
         if (!acct.loggedIn) return
         val owner = acct.steamId
+        val started = System.currentTimeMillis()
         scope.launch {
             val on = runCatching { acct.subscribedOnPage(id) }.getOrNull() ?: return@launch
+            // 读网页的时候（或之前一分钟内）在 App 里点过订阅 / 取消订阅：网页可能还是旧的，以点的为准
+            if (changedSince(owner, id, started)) return@launch
+            localSub.remove("$owner/$id")
+            if (!on) store.subscribed.remove(id)
             if (store.remoteSubsOwner != owner) return@launch
             val was = store.remoteSubs.containsKey(id)
             if (on && !was) store.remoteSubs[id] = true
@@ -824,23 +859,39 @@ class Workshop(val steam: Steam, val sub: Steam, val store: Store, private val s
         val key = "sub:${it.id}"
         if (busy[key] == true) return
         busy[key] = true
+        val acct = subscriber
+        val owner = subscriberId
+        fun done() {
+            localSub["$owner/${it.id}"] = on
+            localSubAt["$owner/${it.id}"] = System.currentTimeMillis()
+            if (store.remoteSubsOwner == owner || store.remoteSubsOwner == acct.steamId) {
+                if (on) store.remoteSubs[it.id] = true else store.remoteSubs.remove(it.id)
+            }
+            if (on) {
+                store.subscribed[it.id] = System.currentTimeMillis()
+                val name = if (it.title.length > 18) it.title.take(17) + "…" else it.title
+                toast("已订阅「$name」" + (if (sub.loggedIn) "到订阅账号" else "") + "，电脑上的 Steam 会自动下载")
+            } else {
+                store.subscribed.remove(it.id)
+                toast("已取消订阅")
+            }
+            store.save()
+            Log.i((if (on) "订阅 " else "取消订阅 ") + it.id)
+        }
         scope.launch {
             try {
-                subscriber.subscribe(it.id, on)
-                if (store.remoteSubsOwner == subscriber.steamId) {
-                    if (on) store.remoteSubs[it.id] = true else store.remoteSubs.remove(it.id)
-                }
-                if (on) {
-                    store.subscribed[it.id] = System.currentTimeMillis()
-                    val name = if (it.title.length > 18) it.title.take(17) + "…" else it.title
-                    toast("已订阅「$name」" + (if (sub.loggedIn) "到订阅账号" else "") + "，电脑上的 Steam 会自动下载")
-                } else {
-                    store.subscribed.remove(it.id)
-                    toast("已取消订阅")
-                }
-                store.save()
-                Log.i((if (on) "订阅 " else "取消订阅 ") + it.id)
+                acct.subscribe(it.id, on)
+                done()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
+                // 超时或者返回的不是「成功」，但 Steam 其实已经办好了：到网页上核对一下
+                if (runCatching { acct.subscribedOnPage(it.id) }.getOrNull() == on) {
+                    Log.i((if (on) "订阅 " else "取消订阅 ") + it.id + " 返回失败（${errText(e)}），网页上已经是" + (if (on) "已订阅" else "没订阅"))
+                    done()
+                    busy.remove(key)
+                    return@launch
+                }
                 val who = if (sub.loggedIn) "（订阅账号「${subMe.name.ifEmpty { subMe.steamId }}」）" else ""
                 val hint = if (sub.loggedIn && (e as? SteamException)?.status.let { it == 15 || it == 21 || it == 401 || it == 0 }) "；可以在账号面板退出订阅账号再重新登录" else ""
                 Log.i((if (on) "订阅 " else "取消订阅 ") + it.id + " 失败$who：" + errText(e))

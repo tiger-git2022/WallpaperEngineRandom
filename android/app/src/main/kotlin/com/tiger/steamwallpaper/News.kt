@@ -184,8 +184,15 @@ class NewsFeed(val session: StoreSession, val store: NewsStore, private val cach
     var unread by mutableIntStateOf(0)
         private set
 
-    /** 已经回到过上次的位置（每次启动只做一次）。 */
+    /** 已经回到过上次的位置（打开时一次；启动和从后台回来时的刷新完成后再一次）。 */
     var restored = false
+
+    /** 加载完、该回到上次的位置了（界面看到它变了就去滚动）。 */
+    var restoreTick by mutableIntStateOf(0)
+        private set
+
+    /** 用户自己滑过列表了：等刷新完成后不再跳到上次的位置。 */
+    var touched = false
 
     val wish = mutableStateMapOf<Int, Boolean>()
     val busy = mutableStateMapOf<String, Boolean>()
@@ -257,8 +264,23 @@ class NewsFeed(val session: StoreSession, val store: NewsStore, private val cach
     /** 回到前台：超过设定的间隔没刷新就刷新。 */
     fun autoRefresh() {
         if (!loggedIn || refreshing) return
+        val back = backgrounded
+        val first = firstAuto
+        backgrounded = false
+        firstAuto = false
         val minutes = store.refreshMinutes
-        if (store.lastRefresh == 0L || (minutes > 0 && now - store.lastRefresh > minutes * 60)) refresh(manual = false)
+        if (store.lastRefresh == 0L || (minutes > 0 && now - store.lastRefresh > minutes * 60)) {
+            if ((back || first) && session.loggedIn) {
+                // 打开 App、或从后台回来时刷新：刷新完新的新闻排在上面，再回到「上次看到这里」（用户自己滑了就不跳）
+                reposition = true
+                if (back) {
+                    // 已读线移到现在的阅读进度（和重新打开一样）
+                    dividerFixed = false
+                    touched = false
+                }
+            }
+            refresh(manual = false)
+        }
     }
 
     /** 浏览账号退出了：新闻用的是浏览账号时一起清掉（新闻专用账号不受影响）。 */
@@ -339,7 +361,10 @@ class NewsFeed(val session: StoreSession, val store: NewsStore, private val cach
     fun refresh(manual: Boolean) {
         if (refreshing) return
         // 手动刷新（下拉、点标签）：已读线等刷新完重新加载时移到现在的阅读进度（和壁纸动态一样）
-        if (manual) dividerFixed = false
+        if (manual) {
+            dividerFixed = false
+            reposition = false
+        }
         if (!session.loggedIn) {
             error = "还没有登录 Steam"
             return
@@ -373,6 +398,10 @@ class NewsFeed(val session: StoreSession, val store: NewsStore, private val cach
             refreshing = false
             progress = ""
             ready = ready || docs.isNotEmpty()
+            if (reposition) {
+                reposition = false
+                restored = false
+            }
             reload()
             if (found.isNotEmpty()) App.instance.workshop.toast("关注的发行商有新发售：" + found.take(3).joinToString("、") { "《$it》" } + if (found.size > 3) " 等 ${found.size} 个" else "")
         }
@@ -1043,7 +1072,7 @@ class NewsFeed(val session: StoreSession, val store: NewsStore, private val cach
 
     private fun afterLoad() {
         if (store.filter != "all" || keys.isEmpty()) {
-            if (keys.isNotEmpty() || done) settled = true
+            if (keys.isNotEmpty() || done) settle()
             updateUnread()
             return
         }
@@ -1064,7 +1093,12 @@ class NewsFeed(val session: StoreSession, val store: NewsStore, private val cach
             dividerFixed = true
         }
         updateBoundary()
+        settle()
+    }
+
+    private fun settle() {
         settled = true
+        if (!restored) restoreTick++
     }
 
     private var dividerFixed = false
@@ -1120,7 +1154,17 @@ class NewsFeed(val session: StoreSession, val store: NewsStore, private val cach
     /** 离开 App（切到后台、退出）：马上保存阅读进度和位置。 */
     fun leave() {
         store.saveNow()
+        backgrounded = true
     }
+
+    /** 切到后台过（[leave]）；回来时如果自动刷新了，就和重新打开一样回到「上次看到这里」。 */
+    private var backgrounded = false
+
+    /** 启动后还没自动刷新过。 */
+    private var firstAuto = true
+
+    /** 这次刷新完要再回到上次的位置一次（启动、从后台回来时的刷新）。 */
+    private var reposition = false
 
     // ---- 操作 ----
 
