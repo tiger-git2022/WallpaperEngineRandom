@@ -110,17 +110,20 @@ fun TimelinePage() {
             (info.visibleItemsInfo.lastOrNull()?.index ?: 0) >= info.totalItemsCount - 4
         }.collect { near -> if (near && !v.loading && !v.done && v.error == null && v.ids.isNotEmpty() && v.settled) ws.loadMore(v) }
     }
-    // 打开时回到上次看到的位置：那一项还在列表里就滚过去，否则停在已读线（刚看过的地方）
+    // 打开时（和从后台回来又刷新了以后）回到上次的位置：上次停在「以下是已经看过的」上面（新的还没看完）就回到那里；
+    // 停在这条线上、线下面（看过的）、最上面或找不到时，显示这条线
     LaunchedEffect(v, v.settled) {
         if (!v.settled || v.restored) return@LaunchedEffect
         v.restored = true
         val saved = store.timelineKey
         // 合并显示时上次的那一项可能在别的组里：按壁纸 ID 找它所在的组
         val savedId = saved.removePrefix("p:")
-        val i = keys.indexOf(saved).takeIf { it >= 0 }
+        val p = keys.indexOf(saved).takeIf { it >= 0 }
             ?: posts.indexOfFirst { p -> p.items.any { it.id == savedId } }.takeIf { it >= 0 && saved.startsWith("p:") }?.let { keys.indexOf("p:" + posts[it].items[0].id) }
-            ?: keys.indexOf("divider").takeIf { it >= 0 }
-        if (i != null && i > 0) v.list.scrollToItem(i, if (keys.getOrNull(i) == saved) store.timelineOffset else 0)
+            ?: -1
+        val d = keys.indexOf("divider")
+        val i = if (p > 0 && (d < 0 || p < d)) p else if (d > 0) d else p
+        if (i > 0) v.list.scrollToItem(i, if (i == p && keys.getOrNull(i) == saved) store.timelineOffset else 0)
     }
     // 记下现在看到的位置（停下来 0.5 秒后）
     LaunchedEffect(v) {

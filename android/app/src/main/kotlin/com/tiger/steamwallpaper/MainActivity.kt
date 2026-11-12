@@ -122,6 +122,7 @@ class MainActivity : ComponentActivity() {
         val app = App.instance
         app.workshop.refreshLogin()
         app.news.refreshLogin()
+        app.workshop.resumeTimeline()
         app.updater.onResume(this)
         app.updater.autoCheck()
     }
@@ -130,6 +131,7 @@ class MainActivity : ComponentActivity() {
         super.onStop()
         // 离开（切到后台、锁屏、退出）：记下「上次看到这里」
         App.instance.news.leave()
+        App.instance.workshop.leave()
     }
 
     companion object {
