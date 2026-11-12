@@ -729,10 +729,49 @@ public sealed class WorkshopView : Grid
 				same.Add(new List<object> { Math.Min(ia, ib), Math.Max(ia, ib), (int)Math.Round(share * 1000) });
 			}
 		}
+		List<object> extra = ExtraPairs(index);
 		_engine.Log.Log("查重：" + entries.Count + " 个壁纸（" + remote.Count + " 个只在平板 / 手机上，" + videos + " 个比较视频画面），相似度 0.65 以上的组合 "
-			+ pairs.Count + " 个（其中靠视频画面的 " + pairs.Count(p => p.Video) + " 个），有相同文件的 " + same.Count + " 对");
+			+ pairs.Count + " 个（其中靠视频画面的 " + pairs.Count(p => p.Video) + " 个），有相同文件的 " + same.Count + " 对"
+			+ (extra.Count > 0 ? "，手动标出的 " + extra.Count + " 对" : ""));
 		DupeProgress("");
-		return Json.Write(new JObj { ["items"] = items, ["pairs"] = list, ["files"] = same, ["noFfmpeg"] = !ffmpeg }, pretty: false);
+		return Json.Write(new JObj { ["items"] = items, ["pairs"] = list, ["files"] = same, ["extra"] = extra, ["noFfmpeg"] = !ffmpeg }, pretty: false);
+	}
+
+	/// <summary>
+	/// dupes\extra_pairs.txt：手动标出的相似组合（比如另一个模型找出来、看过确认是同一皮肤的），每行两个壁纸 id，
+	/// 空格 / 逗号 / Tab 分开，# 后面是注释。它们在查重页里各成一组，排在最前面，不受相似度滑条影响。
+	/// </summary>
+	private List<object> ExtraPairs(Dictionary<string, int> index)
+	{
+		var extra = new List<object>();
+		string path = Path.Combine(_engine.Dir, "dupes", "extra_pairs.txt");
+		try
+		{
+			if (!File.Exists(path))
+			{
+				return extra;
+			}
+			foreach (string raw in File.ReadAllLines(path, Encoding.UTF8))
+			{
+				string line = raw.Split('#')[0];
+				List<string> ids = Regex.Matches(line, "\\d{6,20}").Cast<Match>().Select(m => m.Value).ToList();
+				if (ids.Count < 2)
+				{
+					continue;
+				}
+				int? Find(string id) => index.TryGetValue(id, out int i) ? i : index.TryGetValue("r:" + id, out int r) ? r : (int?)null;
+				int? a = Find(ids[0]), b = Find(ids[1]);
+				if (a.HasValue && b.HasValue && a != b)
+				{
+					extra.Add(new List<object> { Math.Min(a.Value, b.Value), Math.Max(a.Value, b.Value) });
+				}
+			}
+		}
+		catch (Exception ex)
+		{
+			_engine.Log.Log("查重：读 extra_pairs.txt 失败：" + ex.Message);
+		}
+		return extra;
 	}
 
 	/// <summary>
