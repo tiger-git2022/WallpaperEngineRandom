@@ -86,23 +86,16 @@ fun parseBB(raw: String, link: Color, quote: Color, spoiler: Color): List<BBlock
     val olist = ArrayDeque<Int>()
     val linkStyles = TextLinkStyles(SpanStyle(color = link, textDecoration = TextDecoration.Underline))
 
-    // 文字里链到游戏的（超链接）：横幅放到这一段的后面，不把句子从中间切开
-    val pending = mutableListOf<BBlock.Game>()
-
     fun flush() {
         val text = b.toAnnotatedString()
         val trimmed = trimNewlines(text)
         if (trimmed.text.isNotBlank()) blocks.add(BBlock.Text(trimmed))
-        blocks.addAll(pending)
-        pending.clear()
         b = AnnotatedString.Builder()
         // 跨块的样式在新块里重新打开
         for (tag in open) pushStyle(b, tag, linkUrl, linkStyles, quote, spoiler)
     }
 
     fun newline(n: Int = 1) {
-        // 一段结束：先把这段里链到的游戏横幅放出来
-        if (pending.isNotEmpty()) flush()
         val cur = b.toAnnotatedString().text
         val have = cur.length - cur.trimEnd('\n', ' ').length
         repeat(maxOf(0, n - have.coerceAtMost(n))) { b.append('\n') }
@@ -111,28 +104,14 @@ fun parseBB(raw: String, link: Color, quote: Color, spoiler: Color): List<BBlock
     // 一篇里同一个游戏只放一个横幅（Steam 常常一个游戏同时有商店卡片和链接）
     val games = HashSet<Int>()
 
-    /** 游戏横幅；[inline]：链在一段文字上的，等这一段结束再放。 */
-    fun game(appid: Int, url: String, inline: Boolean = false) {
+    fun game(appid: Int, url: String) {
         if (!games.add(appid)) return
-        if (inline) {
-            pending.add(BBlock.Game(appid, url))
-        } else {
-            flush()
-            blocks.add(BBlock.Game(appid, url))
-        }
+        flush()
+        blocks.add(BBlock.Game(appid, url))
     }
 
     fun plain(s: String) {
-        if (s.isEmpty()) return
-        // 有等着放的横幅、这里换行了：在换行处结束这一段
-        val nl = if (pending.isNotEmpty()) s.indexOf('\n') else -1
-        if (nl < 0) {
-            b.append(s)
-        } else {
-            b.append(s.substring(0, nl))
-            flush()
-            b.append(s.substring(nl))
-        }
+        if (s.isNotEmpty()) b.append(s)
     }
 
     /** 一段文字：里面直接写出来的网址，商店游戏页换成游戏横幅，别的网址去掉（只是一串网址，没有意义）。 */
@@ -226,9 +205,13 @@ fun parseBB(raw: String, link: Color, quote: Color, spoiler: Color): List<BBlock
                         last = end + 6
                         continue
                     }
-                    // 超链接（一段普通文字，点了跳转）：文字照常显示；链到游戏的，这一段后面放游戏横幅
-                    // （链接里的图片点了还是打开链接）
-                    if (u != null && app != null && !inner.contains("[img", ignoreCase = true)) game(app, u, inline = true)
+                    // 超链接（一段普通文字，点了跳转）：链到游戏的，整段文字换成游戏横幅
+                    if (u != null && app != null && end >= 0 && !inner.contains("[img", ignoreCase = true)) {
+                        game(app, u)
+                        last = end + 6
+                        continue
+                    }
+                    // 别的超链接只显示文字（链接里的图片点了还是打开链接）
                     if (u != null) {
                         linkUrl = u
                         open.addLast("url")
