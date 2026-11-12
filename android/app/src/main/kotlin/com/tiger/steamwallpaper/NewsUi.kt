@@ -274,9 +274,10 @@ private fun NewsCard(it: NewsItem) {
             NewsBody(it.body)
             ToggleHint("收起", Icons.Default.ExpandLess)
         } else {
-            val sum = it.summary.ifEmpty { bbPlain(it.body) }
+            // 收起时也保留分段和换行（和展开后一样），最多显示 8 行
+            val sum = it.summary.ifEmpty { bbPlain(it.body, keepLines = true) }
             if (sum.isNotEmpty()) {
-                Text(if (sum.length > 160) sum.take(160) + "…" else sum, fontSize = 14.sp, lineHeight = 20.sp, modifier = Modifier.padding(top = 8.dp))
+                Text(sum.take(600), fontSize = 14.sp, lineHeight = 20.sp, maxLines = 8, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
             }
             ToggleHint("展开全文", Icons.Default.ExpandMore)
         }
@@ -525,9 +526,41 @@ private fun NewsBody(body: String) {
                 is BBlock.Image -> BigPicture(b.url, maxHeight = 640.dp, onLongClick = { LocalActions.lightbox(b.url) }) {
                     if (b.link != null) openUrl(context, b.link) else LocalActions.lightbox(b.url)
                 }
+                is BBlock.Game -> GameBanner(b.appid, b.url)
                 is BBlock.YouTube -> VideoThumb("https://i.ytimg.com/vi/${b.id}/hqdefault.jpg", "在 YouTube 观看") { openUrl(context, "https://www.youtube.com/watch?v=${b.id}") }
                 is BBlock.Video -> VideoThumb(b.poster, "播放视频") { openUrl(context, b.url) }
                 BBlock.Rule -> HorizontalDivider()
+            }
+        }
+    }
+}
+
+/** 正文里链接到的游戏：横幅图、名字、价格、愿望单，点一下打开商店页（和 Steam 网页上的商店卡片一样）。 */
+@Composable
+private fun GameBanner(appid: Int, url: String) {
+    val feed = news
+    val context = LocalContext.current
+    LaunchedEffect(appid) { feed.requestBanner(appid) }
+    val a = feed.banners[appid]
+    val shape = RoundedCornerShape(14.dp)
+    Column(
+        Modifier.fillMaxWidth().clip(shape)
+            .background(if (isDark()) Color.White.copy(alpha = 0.06f) else Color.Black.copy(alpha = 0.04f))
+            .clickable { openUrl(context, a?.url ?: url) },
+    ) {
+        Box(Modifier.fillMaxWidth().aspectRatio(460f / 215f)) {
+            if (a == null || a.header.isEmpty()) LoadingShimmer(Modifier.fillMaxSize())
+            else AsyncImage(model = a.header, contentDescription = a.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(a?.name ?: "Steam 商店", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (a != null) ReviewLine(a)
+                if (a != null) PriceLine(a)
+            }
+            if (a != null) {
+                Spacer(Modifier.width(8.dp))
+                WishButton(a)
             }
         }
     }

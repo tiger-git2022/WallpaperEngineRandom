@@ -13,9 +13,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.sp
 
-/** Steam 新闻正文（BBCode）拆成的一块：一段文字、一张图、一个 YouTube 视频、一个视频、一条分隔线。 */
+/** Steam 新闻正文（BBCode）拆成的一块：一段文字、一张图、一个 YouTube 视频、一个视频、一个游戏横幅、一条分隔线。 */
 sealed class BBlock {
     class Text(val text: AnnotatedString) : BBlock()
+
+    /** 指向 Steam 商店游戏页的链接：显示成游戏横幅（和 Steam 网页上的商店卡片一样）。 */
+    class Game(val appid: Int, val url: String) : BBlock()
     class Image(val url: String, val link: String?) : BBlock()
     class YouTube(val id: String) : BBlock()
     class Video(val url: String, val poster: String) : BBlock()
@@ -26,6 +29,14 @@ sealed class BBlock {
 private val TAG = Regex("\\[(/?)([a-zA-Z0-9*]+)((?:=|\\s)[^\\]]*)?\\]")
 private val IGNORED = Regex("^(c|color|size|font|align|center|left|right|pullquote|carousel|noparse|h\\d|i|b|u|p|img|video|previewyoutube|dynamiclink)$")
 
+/** 商店游戏页的地址，取 appid。 */
+private val STORE_APP = Regex("""^https?://store\.steampowered\.com/app/(\d+)""", RegexOption.IGNORE_CASE)
+
+/** 正文里没加标签的网址。 */
+private val BARE_URL = Regex("""https?://[^\s\[\]<>"]+""", RegexOption.IGNORE_CASE)
+
+fun storeAppId(url: String): Int? = STORE_APP.find(url.trim())?.groupValues?.get(1)?.toIntOrNull()
+
 fun safeUrl(u: String?): String? = u?.trim()?.trim('"', '\'')?.takeIf { Regex("^https?://", RegexOption.IGNORE_CASE).containsMatchIn(it) }
 
 private fun attr(s: String, key: String): String {
@@ -33,17 +44,26 @@ private fun attr(s: String, key: String): String {
     return m.groupValues[2].ifEmpty { m.groupValues[3].ifEmpty { m.groupValues[4] } }
 }
 
-/** 正文去掉标签后的纯文字（摘要用）。 */
-fun bbPlain(src: String): String = src
-    .replace(Regex("\\{STEAM_CLAN_IMAGE\\}[^\\s\\[]*"), "")
-    .replace(Regex("\\[img[\\s\\S]*?\\[/img\\]", RegexOption.IGNORE_CASE), "")
-    .replace(Regex("\\[previewyoutube[\\s\\S]*?\\[/previewyoutube\\]", RegexOption.IGNORE_CASE), "")
-    // 商店链接卡片、视频的标签里是很长的网址：整个去掉
-    .replace(Regex("\\[(dynamiclink|video)[^\\]]*\\][\\s\\S]*?\\[/(dynamiclink|video)\\]", RegexOption.IGNORE_CASE), " ")
-    .replace(Regex("\\[[^\\]]{1,400}\\]"), " ")
-    .replace(Regex("https?://\\S+"), "")
-    .replace(Regex("\\s+"), " ")
-    .trim()
+/**
+ * 正文去掉标签后的纯文字（摘要用）。[keepLines]：保留分段和换行（收起时的摘要和展开后一样分段），否则压成一行。
+ */
+fun bbPlain(src: String, keepLines: Boolean = false): String {
+    var s = src.replace("\r\n", "\n").replace('\r', '\n')
+        .replace(Regex("\\{STEAM_CLAN_IMAGE\\}[^\\s\\[]*"), "")
+        .replace(Regex("\\[img[\\s\\S]*?\\[/img\\]", RegexOption.IGNORE_CASE), "")
+        .replace(Regex("\\[previewyoutube[\\s\\S]*?\\[/previewyoutube\\]", RegexOption.IGNORE_CASE), "")
+        // 商店链接卡片、视频的标签里是很长的网址：整个去掉
+        .replace(Regex("\\[(dynamiclink|video)[^\\]]*\\][\\s\\S]*?\\[/(dynamiclink|video)\\]", RegexOption.IGNORE_CASE), " ")
+    if (keepLines) {
+        // 分段、标题、列表项、表格行这些地方换行
+        s = s.replace(Regex("\\[(/?p|br|hr|/h[1-6]|\\*|/?list|/?olist|/quote|/tr)\\]", RegexOption.IGNORE_CASE), "\n")
+    }
+    s = s.replace(Regex("\\[[^\\]]{1,400}\\]"), if (keepLines) "" else " ")
+        .replace(Regex("https?://\\S+"), "")
+    if (!keepLines) return s.replace(Regex("\\s+"), " ").trim()
+    return s.lines().joinToString("\n") { it.replace(Regex("[ \\t\\u3000]+"), " ").trim() }
+        .replace(Regex("\\n{3,}"), "\n\n").trim()
+}
 
 /** 正文里的第一张图（没有封面时用）。 */
 fun bbFirstImage(body: String): String {
@@ -81,8 +101,30 @@ fun parseBB(raw: String, link: Color, quote: Color, spoiler: Color): List<BBlock
         repeat(maxOf(0, n - have.coerceAtMost(n))) { b.append('\n') }
     }
 
-    fun text(s: String) {
+    // 一篇里同一个游戏只放一个横幅（Steam 常常一个游戏同时有商店卡片和链接）
+    val games = HashSet<Int>()
+    fun game(appid: Int, url: String) {
+        if (!games.add(appid)) return
+        flush()
+        blocks.add(BBlock.Game(appid, url))
+    }
+
+    fun plain(s: String) {
         if (s.isNotEmpty()) b.append(s)
+    }
+
+    /** 一段文字：里面没加标签的网址，商店游戏页换成游戏横幅，别的网址可以点。 */
+    fun text(s: String) {
+        if (s.isEmpty()) return
+        var at = 0
+        for (m in BARE_URL.findAll(s)) {
+            val u = m.value.trimEnd('.', ',', ')', '。', '，', '）')
+            plain(s.substring(at, m.range.first))
+            at = m.range.first + u.length
+            val app = storeAppId(u)
+            if (app != null) game(app, u) else b.withLink(LinkAnnotation.Url(u, linkStyles)) { append(u) }
+        }
+        plain(s.substring(at))
     }
 
     var last = 0
@@ -129,11 +171,16 @@ fun parseBB(raw: String, link: Color, quote: Color, spoiler: Color): List<BBlock
             "dynamiclink" -> if (!close) {
                 val end = src.indexOf("[/dynamiclink]", last, ignoreCase = true)
                 if (end >= 0) last = end + "[/dynamiclink]".length
-                // Steam 网页上是一张单独的商店卡片：这里单独占一行
+                // Steam 网页上是一张单独的商店卡片：游戏的换成横幅，别的单独占一行
                 safeUrl(attr(m.value, "href"))?.let { u ->
-                    newline(1)
-                    b.withLink(LinkAnnotation.Url(u, linkStyles)) { append(u) }
-                    newline(1)
+                    val app = storeAppId(u)
+                    if (app != null) {
+                        game(app, u)
+                    } else {
+                        newline(1)
+                        b.withLink(LinkAnnotation.Url(u, linkStyles)) { append(u) }
+                        newline(1)
+                    }
                 }
             }
             "hr" -> if (!close) {
@@ -147,18 +194,34 @@ fun parseBB(raw: String, link: Color, quote: Color, spoiler: Color): List<BBlock
                         linkUrl = null
                     }
                 } else {
-                    var u = safeUrl(arg)
+                    val u = safeUrl(arg)
+                    val end = src.indexOf("[/url]", last, ignoreCase = true)
+                    val inner = if (end >= 0) src.substring(last, end) else ""
+                    val innerText = inner.replace(Regex("\\[[^\\]]*\\]"), "").trim()
                     if (u == null && arg.isEmpty()) {
-                        // [url]https://…[/url]
-                        val end = src.indexOf("[/url]", last, ignoreCase = true)
-                        val inner = if (end >= 0) src.substring(last, end) else ""
+                        // [url]https://…[/url]：游戏页换成横幅，别的网址可以点
                         val s = safeUrl(inner)
                         if (s != null) {
-                            b.withLink(LinkAnnotation.Url(s, linkStyles)) { append(s) }
+                            val app = storeAppId(s)
+                            if (app != null) game(app, s) else b.withLink(LinkAnnotation.Url(s, linkStyles)) { append(s) }
                             last = end + 6
                             continue
                         }
                     }
+                    // 指向游戏页、显示的就是网址（或者什么都不显示）：换成游戏横幅
+                    val app = u?.let { storeAppId(it) }
+                    if (u != null && app != null && end >= 0 && (innerText.isEmpty() || safeUrl(innerText) != null) && !inner.contains("[img", ignoreCase = true)) {
+                        game(app, u)
+                        last = end + 6
+                        continue
+                    }
+                    // 显示的就是网址（微博、B 站这种）：留着可以点
+                    if (u != null && end >= 0 && safeUrl(innerText) != null && !inner.contains("[img", ignoreCase = true)) {
+                        b.withLink(LinkAnnotation.Url(u, linkStyles)) { append(innerText) }
+                        last = end + 6
+                        continue
+                    }
+                    // 文字链接：只留文字，不做成链接（链接里的图片点了还是打开链接）
                     if (u != null) {
                         linkUrl = u
                         open.addLast("url")
@@ -212,7 +275,8 @@ fun parseBB(raw: String, link: Color, quote: Color, spoiler: Color): List<BBlock
 
 private fun pushStyle(b: AnnotatedString.Builder, tag: String, url: String?, links: TextLinkStyles, quote: Color, spoiler: Color) {
     when (tag) {
-        "url" -> if (url != null) b.pushLink(LinkAnnotation.Url(url, links)) else b.pushStyle(SpanStyle())
+        // 文字链接只显示文字（用户要求；指向游戏的另外换成横幅）
+        "url" -> b.pushStyle(SpanStyle())
         "b" -> b.pushStyle(SpanStyle(fontWeight = FontWeight.Bold))
         "i" -> b.pushStyle(SpanStyle(fontStyle = FontStyle.Italic))
         "u" -> b.pushStyle(SpanStyle(textDecoration = TextDecoration.Underline))
