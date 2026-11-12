@@ -40,6 +40,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -51,6 +56,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
@@ -374,14 +380,17 @@ private fun SourceRow(it: NewsItem) {
     }
 }
 
-/** 「译」：翻译 / 显示原文；显示译文时亮起主题色。 */
+/** 「译」：翻译 / 显示原文；显示译文时亮起主题色，排队和翻译中闪烁。 */
 @Composable
 private fun TranslateButton(it: NewsItem) {
     val tr = news.tr
     val on = tr.shown(it.key)
     val primary = MaterialTheme.colorScheme.primary
+    val blink = if (tr.posts[it.key]?.busy == true) {
+        rememberInfiniteTransition(label = "译").animateFloat(1f, 0.35f, infiniteRepeatable(tween(600), RepeatMode.Reverse), label = "译").value
+    } else 1f
     Box(
-        Modifier.size(34.dp).frost(CircleShape)
+        Modifier.size(34.dp).alpha(blink).frost(CircleShape)
             .then(if (on) Modifier.background(primary.copy(alpha = 0.22f), CircleShape) else Modifier)
             .clickable { tr.click(it.key) },
         contentAlignment = Alignment.Center,
@@ -390,7 +399,7 @@ private fun TranslateButton(it: NewsItem) {
     }
 }
 
-/** 标题下面的一行小字：正在翻译 / 机器翻译 · 显示原文 / 翻译失败 · 重试。 */
+/** 标题下面的一行小字：排队等待翻译 / 正在翻译 / 机器翻译 · 显示原文 · 重新翻译 / 翻译失败 · 重试。 */
 @Composable
 private fun TranslateNote(it: NewsItem) {
     val tr = news.tr
@@ -402,6 +411,10 @@ private fun TranslateNote(it: NewsItem) {
                 Text("翻译失败：${s.error}", fontSize = 12.sp, color = scheme.error, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 Text(" · 重试", fontSize = 12.sp, color = scheme.primary, fontWeight = FontWeight.Medium, modifier = Modifier.clickable { tr.click(it.key) })
             }
+            s.busy && !s.running -> {
+                val ahead = tr.ahead(it.key)
+                Text(if (ahead > 0) "⏳ 排队等待翻译（前面还有 $ahead 条）" else "⏳ 排队等待翻译", fontSize = 12.sp)
+            }
             s.busy -> {
                 CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp)
                 Text("  正在翻译…", fontSize = 12.sp)
@@ -409,6 +422,8 @@ private fun TranslateNote(it: NewsItem) {
             s.done -> {
                 Text(if (s.orig) "🌐 显示的是原文 · " else "🌐 机器翻译 · ", fontSize = 12.sp)
                 Text(if (s.orig) "显示译文" else "显示原文", fontSize = 12.sp, color = scheme.primary, fontWeight = FontWeight.Medium, modifier = Modifier.clickable { tr.click(it.key) })
+                Text(" · ", fontSize = 12.sp)
+                Text("重新翻译", fontSize = 12.sp, color = scheme.primary, fontWeight = FontWeight.Medium, modifier = Modifier.clickable { tr.retranslate(it.key) })
             }
         }
     }
@@ -684,7 +699,15 @@ private fun NewsCommentsView(it: NewsItem) {
             }
         }
     }
-    c.trError?.let { e -> Text("翻译失败：$e", fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
+    c.trError?.takeIf { !c.trLoading }?.let { e ->
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("翻译失败：$e", fontSize = 12.sp, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f, fill = false))
+            Text(
+                " · 重试", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium,
+                modifier = Modifier.clickable { tr.translateComments(it.key, auto = false) }.padding(vertical = 4.dp),
+            )
+        }
+    }
     c.list.forEach { m ->
         Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
             Avatar(m.avatar, 30.dp, Modifier.clickable(enabled = m.url.isNotEmpty()) { openUrl(context, m.url) })
@@ -694,6 +717,12 @@ private fun NewsCommentsView(it: NewsItem) {
                     if (m.t > 0) Text("  " + whenText(m.t), fontSize = 12.sp, maxLines = 1)
                 }
                 Text(c.tr[m.id]?.takeIf { c.trOn } ?: m.text, fontSize = 14.sp, lineHeight = 20.sp, modifier = Modifier.padding(top = 1.dp))
+                if (c.trLoading && m.id in c.trWait) {
+                    Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(10.dp), strokeWidth = 1.5.dp)
+                        Text("  等待翻译", fontSize = 11.sp)
+                    }
+                }
             }
         }
     }

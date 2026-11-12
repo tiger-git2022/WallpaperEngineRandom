@@ -4,6 +4,8 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -22,6 +24,9 @@ import java.io.File
 /** 一条新闻的翻译状态（和电脑版页面的 trState 一样）。 */
 class PostTr {
     var busy by mutableStateOf(false)
+
+    /** 已经轮到、正在翻译（[busy] 但不是 running 的还在排队）。 */
+    var running by mutableStateOf(false)
     var done by mutableStateOf(false)
     var error by mutableStateOf<String?>(null)
     var title by mutableStateOf("")
@@ -40,8 +45,8 @@ class NewsTranslate(private val feed: NewsFeed, private val store: NewsStore, pr
     /** 新闻 key → 翻译状态（对应 [lang]）。 */
     val posts = mutableStateMapOf<String, PostTr>()
     private var lang = store.translateTo
-    private val pending = ArrayDeque<Pair<String, Boolean>>()
-    private var running = 0
+    private val pending = mutableStateListOf<Pair<String, Boolean>>()
+    private var running by mutableIntStateOf(0)
     private val main = Handler(Looper.getMainLooper())
 
     /** 缓存：「gid|目标语言」→ {title, summary, body, t}；「c:评论id|目标语言」→ {text, t}。 */
@@ -98,6 +103,19 @@ class NewsTranslate(private val feed: NewsFeed, private val store: NewsStore, pr
         queue(key, force = s?.error != null)
     }
 
+    /** 「重新翻译」：译文不满意，不用缓存再翻一次。 */
+    fun retranslate(key: String) {
+        checkLang()
+        if (posts[key]?.busy == true) return
+        queue(key, force = true)
+    }
+
+    /** 排队时前面还有几篇（包括正在翻的）；不在排队返回 -1。 */
+    fun ahead(key: String): Int {
+        val i = pending.indexOfFirst { it.first == key }
+        return if (i < 0) -1 else i + running
+    }
+
     /** 自动翻译：出现在屏幕附近、不是目标语言的新闻（出过错的不自动重试）。 */
     fun autoQueue(it: NewsItem) {
         if (!auto || it.kind != "event" || it.gid.isEmpty()) return
@@ -112,14 +130,14 @@ class NewsTranslate(private val feed: NewsFeed, private val store: NewsStore, pr
         val old = posts[key]
         if (old != null && (old.busy || (old.done && !force))) return
         posts[key] = PostTr().apply { busy = true }
-        pending.addLast(key to force)
+        pending.add(key to force)
         pump()
     }
 
     /** 同时最多翻两篇，其余排队。 */
     private fun pump() {
         while (running < 2 && pending.isNotEmpty()) {
-            val (key, force) = pending.removeFirst()
+            val (key, force) = pending.removeAt(0)
             val it = feed.items[key]
             val s = posts[key]
             if (s == null) continue
@@ -128,6 +146,7 @@ class NewsTranslate(private val feed: NewsFeed, private val store: NewsStore, pr
                 continue
             }
             running++
+            s.running = true
             scope.launch {
                 try {
                     val r = translate(it, s, force)
@@ -142,6 +161,7 @@ class NewsTranslate(private val feed: NewsFeed, private val store: NewsStore, pr
                     s.error = Translator.errText(e)
                 } finally {
                     s.busy = false
+                    s.running = false
                     running--
                     pump()
                 }
@@ -154,7 +174,11 @@ class NewsTranslate(private val feed: NewsFeed, private val store: NewsStore, pr
         val ck = it.gid + "|" + c.target
         loadCache()
         if (!force) {
-            cache[ck]?.let { j -> return PostTranslation(j.optString("title"), j.optString("summary"), j.optString("body")) }
+            // 以前缓存下来的空结果不用
+            cache[ck]?.let { j ->
+                val r = PostTranslation(j.optString("title"), j.optString("summary"), j.optString("body"))
+                if (Translator.complete(r, it.title, it.body)) return r
+            }
         }
         // 流式：边翻边显示，最多每 0.12 秒刷新一次。用开机以来的单调时钟，不会倒退、不会变成负数
         var last = 0L
@@ -191,6 +215,8 @@ class NewsTranslate(private val feed: NewsFeed, private val store: NewsStore, pr
         if (auto && c.trError != null) return
         c.trLoading = true
         c.trError = null
+        c.trWait.clear()
+        c.trWait.addAll(todo.map { it.id })
         scope.launch {
             try {
                 val conf = config()
@@ -206,6 +232,9 @@ class NewsTranslate(private val feed: NewsFeed, private val store: NewsStore, pr
                 if (conf.target == lang) {
                     todo.forEach { m -> cache[ck(m.id)]?.optString("text")?.takeIf { it.isNotEmpty() }?.let { c.tr[m.id] = it } }
                     c.trOn = true
+                    // 有几条没翻出来：显示出来，「重试」只翻这几条
+                    val missing = todo.count { m -> c.tr[m.id] == null }
+                    if (missing > 0) c.trError = "有 $missing 条没翻出来"
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -214,6 +243,7 @@ class NewsTranslate(private val feed: NewsFeed, private val store: NewsStore, pr
                 c.trError = Translator.errText(e)
             } finally {
                 c.trLoading = false
+                c.trWait.clear()
             }
         }
     }
