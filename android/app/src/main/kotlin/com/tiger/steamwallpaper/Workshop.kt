@@ -304,14 +304,34 @@ class Workshop(val steam: Steam, val sub: Steam, val store: Store, private val s
     }
 
     /** 下拉刷新（或在顶部再点一次标签）：在后台重新加载第一页，加载完换掉旧列表。 */
-    fun refresh(v: ListView) {
+    fun refresh(v: ListView, reposition: Boolean = false) {
         if (v.refreshing != null) return
         val n = v.fresh()
         n.replaces = v
-        // 刷新后停在最上面，不再跳回上次看到的位置
-        n.restored = true
+        // 下拉刷新后停在最上面，不再跳回上次看到的位置；[reposition]（从后台回来时的刷新）回到「以下是已经看过的」
+        n.restored = !reposition
         v.refreshing = n
         loadMore(n)
+    }
+
+    /** 切到后台的时间。 */
+    private var leftAt = 0L
+
+    fun leave() {
+        leftAt = System.currentTimeMillis()
+    }
+
+    /**
+     * 回到前台：在后台放了半小时以上，时间线重新加载（和重新打开一样）：新的排在上面，「以下是已经看过的」移到现在的阅读进度，
+     * 加载完回到这条线。
+     */
+    fun resumeTimeline() {
+        val left = leftAt
+        leftAt = 0L
+        if (left == 0L || System.currentTimeMillis() - left < 30 * 60_000L) return
+        val v = timeline ?: return
+        if (!me.loggedIn || !v.restored || v.refreshing != null || v.loading) return
+        refresh(v, reposition = true)
     }
 
     private fun swapIn(n: ListView) {
