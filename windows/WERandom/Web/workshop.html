@@ -1444,7 +1444,13 @@ function toggleComments(a) {
 // cover from Steam. "保留这个": unsubscribe the others (subscribing account), move them on the devices to wer_trash,
 // and put the kept one on that device's "to send with WE" list.
 const dupe = { applied: null, data: null, loading: false, text: '', error: null, devices: null, devError: null, removed: new Set(), shown: 20, groups: [] };
-function dcfg() { return S.dupe = Object.assign({ min: 0.75, addrs: [], ignore: [], never: [], send: {}, onlyDevice: false, recent: true, pcOnly: false }, S.dupe || {}); }
+// always the same object: renderDupes hands it to the switches and then buildGroups asks again; a fresh copy each
+// time left the switches writing to a stale one, so a click was undone by the next redraw
+function dcfg() {
+  const d = S.dupe || (S.dupe = {}), def = { min: 0.75, addrs: [], ignore: [], never: [], send: {}, onlyDevice: false, recent: true, pcOnly: false };
+  for (const k in def) if (!(k in d)) d[k] = def[k];
+  return d;
+}
 const pairKey = (a, b) => a < b ? a + '|' + b : b + '|' + a;
 const onDevices = id => (dupe.devices || []).filter(d => d.ids.includes(id));
 const dupeTitle = it => it.title || (items.get(it.id) || {}).title || it.id;
