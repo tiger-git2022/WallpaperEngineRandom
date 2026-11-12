@@ -868,7 +868,7 @@ class Workshop(val steam: Steam, val sub: Steam, val store: Store, private val s
         val owner = acct.steamId
         if (store.remoteSubsOwner != owner) return
         val started = System.currentTimeMillis()
-        if (started - recentSyncedAt < 60_000L) return
+        if (started - recentSyncedAt < 50_000L) return
         recentSyncing = true
         scope.launch {
             try {
@@ -920,6 +920,24 @@ class Workshop(val steam: Steam, val sub: Steam, val store: Store, private val s
                 recentSyncing = false
             }
         }
+    }
+
+    private var subsPollJob: Job? = null
+
+    /** App 在前台时每分钟同步一次订阅列表第一页（和电脑版一样：别处新订阅的一分钟内显示出来）。 */
+    fun startSubsPoll() {
+        subsPollJob?.cancel()
+        subsPollJob = scope.launch {
+            while (true) {
+                delay(60_000L)
+                syncRecentSubs()
+            }
+        }
+    }
+
+    fun stopSubsPoll() {
+        subsPollJob?.cancel()
+        subsPollJob = null
     }
 
     /** 读订阅列表的进度（0~1，没在读时为 null）、进度文字和上次的错误。 */
