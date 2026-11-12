@@ -86,16 +86,23 @@ fun parseBB(raw: String, link: Color, quote: Color, spoiler: Color): List<BBlock
     val olist = ArrayDeque<Int>()
     val linkStyles = TextLinkStyles(SpanStyle(color = link, textDecoration = TextDecoration.Underline))
 
+    // 文字里链到游戏的（超链接）：横幅放到这一段的后面，不把句子从中间切开
+    val pending = mutableListOf<BBlock.Game>()
+
     fun flush() {
         val text = b.toAnnotatedString()
         val trimmed = trimNewlines(text)
         if (trimmed.text.isNotBlank()) blocks.add(BBlock.Text(trimmed))
+        blocks.addAll(pending)
+        pending.clear()
         b = AnnotatedString.Builder()
         // 跨块的样式在新块里重新打开
         for (tag in open) pushStyle(b, tag, linkUrl, linkStyles, quote, spoiler)
     }
 
     fun newline(n: Int = 1) {
+        // 一段结束：先把这段里链到的游戏横幅放出来
+        if (pending.isNotEmpty()) flush()
         val cur = b.toAnnotatedString().text
         val have = cur.length - cur.trimEnd('\n', ' ').length
         repeat(maxOf(0, n - have.coerceAtMost(n))) { b.append('\n') }
@@ -103,17 +110,32 @@ fun parseBB(raw: String, link: Color, quote: Color, spoiler: Color): List<BBlock
 
     // 一篇里同一个游戏只放一个横幅（Steam 常常一个游戏同时有商店卡片和链接）
     val games = HashSet<Int>()
-    fun game(appid: Int, url: String) {
+
+    /** 游戏横幅；[inline]：链在一段文字上的，等这一段结束再放。 */
+    fun game(appid: Int, url: String, inline: Boolean = false) {
         if (!games.add(appid)) return
-        flush()
-        blocks.add(BBlock.Game(appid, url))
+        if (inline) {
+            pending.add(BBlock.Game(appid, url))
+        } else {
+            flush()
+            blocks.add(BBlock.Game(appid, url))
+        }
     }
 
     fun plain(s: String) {
-        if (s.isNotEmpty()) b.append(s)
+        if (s.isEmpty()) return
+        // 有等着放的横幅、这里换行了：在换行处结束这一段
+        val nl = if (pending.isNotEmpty()) s.indexOf('\n') else -1
+        if (nl < 0) {
+            b.append(s)
+        } else {
+            b.append(s.substring(0, nl))
+            flush()
+            b.append(s.substring(nl))
+        }
     }
 
-    /** 一段文字：里面没加标签的网址，商店游戏页换成游戏横幅，别的网址可以点。 */
+    /** 一段文字：里面直接写出来的网址，商店游戏页换成游戏横幅，别的网址去掉（只是一串网址，没有意义）。 */
     fun text(s: String) {
         if (s.isEmpty()) return
         var at = 0
@@ -121,8 +143,7 @@ fun parseBB(raw: String, link: Color, quote: Color, spoiler: Color): List<BBlock
             val u = m.value.trimEnd('.', ',', ')', '。', '，', '）')
             plain(s.substring(at, m.range.first))
             at = m.range.first + u.length
-            val app = storeAppId(u)
-            if (app != null) game(app, u) else b.withLink(LinkAnnotation.Url(u, linkStyles)) { append(u) }
+            storeAppId(u)?.let { game(it, u) }
         }
         plain(s.substring(at))
     }
@@ -171,17 +192,8 @@ fun parseBB(raw: String, link: Color, quote: Color, spoiler: Color): List<BBlock
             "dynamiclink" -> if (!close) {
                 val end = src.indexOf("[/dynamiclink]", last, ignoreCase = true)
                 if (end >= 0) last = end + "[/dynamiclink]".length
-                // Steam 网页上是一张单独的商店卡片：游戏的换成横幅，别的单独占一行
-                safeUrl(attr(m.value, "href"))?.let { u ->
-                    val app = storeAppId(u)
-                    if (app != null) {
-                        game(app, u)
-                    } else {
-                        newline(1)
-                        b.withLink(LinkAnnotation.Url(u, linkStyles)) { append(u) }
-                        newline(1)
-                    }
-                }
+                // Steam 网页上是一张单独的商店卡片：游戏的换成横幅，别的（只会显示成一串网址）去掉
+                safeUrl(attr(m.value, "href"))?.let { u -> storeAppId(u)?.let { game(it, u) } }
             }
             "hr" -> if (!close) {
                 flush()
@@ -199,29 +211,24 @@ fun parseBB(raw: String, link: Color, quote: Color, spoiler: Color): List<BBlock
                     val inner = if (end >= 0) src.substring(last, end) else ""
                     val innerText = inner.replace(Regex("\\[[^\\]]*\\]"), "").trim()
                     if (u == null && arg.isEmpty()) {
-                        // [url]https://…[/url]：游戏页换成横幅，别的网址可以点
+                        // [url]https://…[/url]：显示出来就是一串网址。游戏页换成横幅，别的去掉
                         val s = safeUrl(inner)
                         if (s != null) {
-                            val app = storeAppId(s)
-                            if (app != null) game(app, s) else b.withLink(LinkAnnotation.Url(s, linkStyles)) { append(s) }
+                            storeAppId(s)?.let { game(it, s) }
                             last = end + 6
                             continue
                         }
                     }
-                    // 指向游戏页、显示的就是网址（或者什么都不显示）：换成游戏横幅
                     val app = u?.let { storeAppId(it) }
-                    if (u != null && app != null && end >= 0 && (innerText.isEmpty() || safeUrl(innerText) != null) && !inner.contains("[img", ignoreCase = true)) {
-                        game(app, u)
+                    // 显示出来就是网址（或者什么都不显示）：游戏页换成横幅，别的（微博、B 站这种）去掉
+                    if (u != null && end >= 0 && (innerText.isEmpty() || safeUrl(innerText) != null) && !inner.contains("[img", ignoreCase = true)) {
+                        if (app != null) game(app, u)
                         last = end + 6
                         continue
                     }
-                    // 显示的就是网址（微博、B 站这种）：留着可以点
-                    if (u != null && end >= 0 && safeUrl(innerText) != null && !inner.contains("[img", ignoreCase = true)) {
-                        b.withLink(LinkAnnotation.Url(u, linkStyles)) { append(innerText) }
-                        last = end + 6
-                        continue
-                    }
-                    // 文字链接：只留文字，不做成链接（链接里的图片点了还是打开链接）
+                    // 超链接（一段普通文字，点了跳转）：文字照常显示；链到游戏的，这一段后面放游戏横幅
+                    // （链接里的图片点了还是打开链接）
+                    if (u != null && app != null && !inner.contains("[img", ignoreCase = true)) game(app, u, inline = true)
                     if (u != null) {
                         linkUrl = u
                         open.addLast("url")
