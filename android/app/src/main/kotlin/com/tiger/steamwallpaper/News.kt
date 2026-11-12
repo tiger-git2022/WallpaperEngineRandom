@@ -52,6 +52,8 @@ class Reviews(val count: Int, val pct: Int, val positive: Int, val score: Int, v
 class AppInfo(
     val appid: Int, val name: String, val type: Int, val url: String, val capsule: String, val short: String,
     val releaseTs: Long, val comingSoon: Boolean, val free: Boolean, val tags: List<String>, val reviews: Reviews?, val price: Price?,
+    /** 横幅图（商店页顶上那张 460×215）。 */
+    val header: String = "",
 ) {
     val typeName: String get() = if (type == 4) "DLC" else if (type == 11) "原声带" else "游戏"
 }
@@ -949,6 +951,7 @@ class NewsFeed(val session: StoreSession, val store: NewsStore, private val cach
         }
         return AppInfo(
             appid = appid, name = it.optString("name"), type = it.optInt("type"), url = "${StoreSession.STORE}/app/$appid/",
+            header = u("header").ifEmpty { u("main_capsule") },
             capsule = u("main_capsule").ifEmpty { u("header") }, short = it.optJSONObject("basic_info")?.optString("short_description") ?: "",
             releaseTs = rel?.optLong("steam_release_date")?.takeIf { x -> x > 0 } ?: rel?.optLong("original_release_date") ?: 0L,
             comingSoon = comingSoon, free = it.optBoolean("is_free"), tags = tagNames, reviews = reviews, price = price,
@@ -1168,6 +1171,33 @@ class NewsFeed(val session: StoreSession, val store: NewsStore, private val cach
         store.showCny = on
         store.save()
         if (on) scope.launch { loadRate(); reload() } else reload()
+    }
+
+    // ---- 正文里的游戏横幅 ----
+
+    /** 正文里链接到的游戏（appid → 横幅要的信息）；读到了才有。 */
+    val banners = mutableStateMapOf<Int, AppInfo>()
+    private val bannerQueue = LinkedHashSet<Int>()
+    private var bannerJob: Job? = null
+
+    /** 横幅出现在屏幕附近时要它的信息：读过的直接给，没读过的 150 ms 内要的合成一批，用公开的 GetItems 读。 */
+    fun requestBanner(appid: Int) {
+        if (banners.containsKey(appid)) return
+        appInfo(appid)?.let {
+            banners[appid] = it
+            return
+        }
+        bannerQueue.add(appid)
+        if (bannerJob?.isActive == true) return
+        bannerJob = scope.launch {
+            delay(150)
+            while (bannerQueue.isNotEmpty()) {
+                val batch = bannerQueue.take(30)
+                bannerQueue.removeAll(batch.toSet())
+                fetchItems(batch)
+                for (id in batch) appInfo(id)?.let { banners[id] = it }
+            }
+        }
     }
 
     // ---- 评论 ----
