@@ -842,8 +842,13 @@ class Workshop(val steam: Steam, val sub: Steam, val store: Store, private val s
             // 读网页的时候（或之前一分钟内）在 App 里点过订阅 / 取消订阅：网页可能还是旧的，以点的为准
             if (changedSince(owner, id, started)) return@launch
             localSub.remove("$owner/$id")
+            // App 里的记录也按网页改（没读过订阅列表时按它显示）
+            if (on && !store.subscribed.containsKey(id)) store.subscribed[id] = System.currentTimeMillis()
             if (!on) store.subscribed.remove(id)
-            if (store.remoteSubsOwner != owner) return@launch
+            if (store.remoteSubsOwner != owner) {
+                store.save()
+                return@launch
+            }
             val was = store.remoteSubs.containsKey(id)
             if (on && !was) store.remoteSubs[id] = true
             if (!on && was) store.remoteSubs.remove(id)
