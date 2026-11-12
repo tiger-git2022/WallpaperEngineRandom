@@ -123,6 +123,7 @@ class MainActivity : ComponentActivity() {
         app.workshop.refreshLogin()
         app.news.refreshLogin()
         app.workshop.resumeTimeline()
+        app.workshop.startSubsPoll()
         app.updater.onResume(this)
         app.updater.autoCheck()
     }
@@ -132,6 +133,7 @@ class MainActivity : ComponentActivity() {
         // 离开（切到后台、锁屏、退出）：记下「上次看到这里」
         App.instance.news.leave()
         App.instance.workshop.leave()
+        App.instance.workshop.stopSubsPoll()
     }
 
     companion object {
