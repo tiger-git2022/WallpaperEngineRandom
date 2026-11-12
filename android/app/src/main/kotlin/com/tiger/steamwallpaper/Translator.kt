@@ -173,8 +173,15 @@ object Translator {
             "4. 原文已经是目标语言的部分照抄。只输出译文，不要任何解释。"
         val user = "===TITLE===\n$title\n===SUMMARY===\n$summary\n===BODY===\n$body"
         val output = run(c, system, user, shouldThink(c, "$title\n$summary\n$body"), onText)
-        return splitPost(output)
+        if (output.isBlank()) throw IllegalStateException("翻译接口没有返回译文")
+        val r = splitPost(output)
+        if (!complete(r, title, body)) throw IllegalStateException("没有拿到完整的译文（接口返回的格式不对）")
+        return r
     }
+
+    /** 译文能用：原文有标题、正文的，译文里也要有（空的不算翻译完成，也不进缓存）。 */
+    fun complete(r: PostTranslation, title: String, body: String) =
+        !(title.isNotBlank() && r.title.isBlank()) && !(body.isNotBlank() && r.body.isBlank())
 
     private val PARTS = listOf("TITLE", "SUMMARY", "BODY").associateWith { name ->
         Regex("===$name===\\s*\\n?([\\s\\S]*?)(?=\\n?===(?:TITLE|SUMMARY|BODY)===|\$)")
@@ -194,6 +201,7 @@ object Translator {
             "保留 ===1===、===2=== 这样的分隔行，每段译文放在对应分隔行下面；原文已经是目标语言的照抄。只输出译文，不要解释。"
         val user = buildString { texts.forEachIndexed { i, t -> append("===").append(i + 1).append("===\n").append(t).append('\n') } }
         val output = run(c, system, user, shouldThink(c, user), null)
+        if (output.isBlank()) throw IllegalStateException("翻译接口没有返回译文")
         return texts.indices.map { i ->
             Regex("===${i + 1}===\\s*\\n?([\\s\\S]*?)(?=\\n?===\\d+===|\$)").find(output)?.groupValues?.get(1)?.trim() ?: ""
         }

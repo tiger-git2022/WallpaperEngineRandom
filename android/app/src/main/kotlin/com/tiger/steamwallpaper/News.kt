@@ -98,6 +98,9 @@ class NewsComments(total: Int) {
     var trOn by mutableStateOf(false)
     var trLoading by mutableStateOf(false)
     var trError by mutableStateOf<String?>(null)
+
+    /** 正在翻译的这一批评论的 id（每条下面标「等待翻译」）。 */
+    val trWait = mutableStateListOf<String>()
 }
 
 /**
