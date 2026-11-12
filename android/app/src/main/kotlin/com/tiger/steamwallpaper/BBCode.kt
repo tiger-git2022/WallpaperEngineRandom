@@ -260,7 +260,35 @@ fun parseBB(raw: String, link: Color, quote: Color, spoiler: Color): List<BBlock
     // 关掉没关的标签
     while (open.isNotEmpty()) popTag(b, open, open.last())
     flush()
-    return blocks
+    return pullPunctuation(blocks)
+}
+
+/** 句末一类的标点（不含左括号、左引号这种跟着后面文字走的）。 */
+private val TRAILING_PUNCT = Regex("^[!！?？.。,，、;；:：…~～)）\\]】」』》〉\"”'’]+")
+
+/**
+ * 横幅后面紧跟着的标点（原文是「…作品：链接！」）挪到横幅前面那段文字的末尾，先显示标点再显示横幅，
+ * 不然横幅下面会单独剩一个「！」。前面没有文字可接时，这个孤零零的标点直接去掉。
+ */
+private fun pullPunctuation(blocks: List<BBlock>): List<BBlock> {
+    val out = blocks.toMutableList()
+    var i = 1
+    while (i < out.size) {
+        val cur = out[i]
+        if (cur !is BBlock.Text || out[i - 1] !is BBlock.Game) { i++; continue }
+        val p = TRAILING_PUNCT.find(cur.text.text)
+        if (p == null) { i++; continue }
+        // 往前跳过连着的几个横幅，找它们前面那段文字
+        var j = i - 1
+        while (j >= 0 && out[j] is BBlock.Game) j--
+        val before = out.getOrNull(j)
+        if (before is BBlock.Text) {
+            out[j] = BBlock.Text(before.text + cur.text.subSequence(0, p.value.length))
+        }
+        val rest = trimNewlines(cur.text.subSequence(p.value.length, cur.text.length))
+        if (rest.text.isBlank()) out.removeAt(i) else { out[i] = BBlock.Text(rest); i++ }
+    }
+    return out
 }
 
 private fun pushStyle(b: AnnotatedString.Builder, tag: String, url: String?, links: TextLinkStyles, quote: Color, spoiler: Color) {
