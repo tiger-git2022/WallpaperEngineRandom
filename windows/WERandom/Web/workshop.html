@@ -1532,11 +1532,14 @@ function buildGroups() {
   // (A~B, B~C, C~D…) into one group of hundreds where most are not alike at all.
   // Two kinds of evidence: pictures (cover, and video frames: kind 1) and the same big files (a re-upload).
   const n = d.items.length, key = (a, b) => a < b ? a * n + b : b * n + a;
-  const look = new Map(), same = new Map();   // key → [score, kind] / share ‰
+  // A third kind: pairs marked by hand in dupes\extra_pairs.txt (e.g. found by another model and checked by eye).
+  const look = new Map(), same = new Map(), hand = new Set();   // key → [score, kind] / share ‰ / marked
   for (const [a, b, s, kind] of d.pairs) { if (s < min) break; if (ok(a, b)) look.set(key(a, b), [s, kind || 0]); }
   for (const [a, b, f] of d.files || []) if (ok(a, b)) same.set(key(a, b), f);
-  const near = k => look.has(k) || same.has(k);
-  const edges = [...(d.files || []).map(([a, b]) => [a, b]), ...d.pairs.filter(p => p[2] >= min)];   // same files first: the surest
+  for (const [a, b] of d.extra || []) if (ok(a, b)) hand.add(key(a, b));
+  const near = k => look.has(k) || same.has(k) || hand.has(k);
+  // marked by hand and same files first: the surest
+  const edges = [...(d.extra || []), ...(d.files || []).map(([a, b]) => [a, b]), ...d.pairs.filter(p => p[2] >= min)];
   const root = d.items.map((_, i) => i), members = new Map();
   for (const [a, b] of edges) {
     if (!near(key(a, b))) continue;
@@ -1547,11 +1550,12 @@ function buildGroups() {
     members.set(ra, A.concat(B)); members.delete(rb);
   }
   let groups = [...members.values()].map(list => {
-    const g = Object.assign(list.map(i => d.items[i]), { score: 0, video: false, files: 0 });
+    const g = Object.assign(list.map(i => d.items[i]), { score: 0, video: false, files: 0, hand: false });
     for (const x of list) for (const y of list) {
       if (x >= y) continue;
       const l = look.get(key(x, y)); if (l && l[0] > g.score) { g.score = l[0]; g.video = l[1] === 1; }
       g.files = Math.max(g.files, same.get(key(x, y)) || 0);
+      if (hand.has(key(x, y))) g.hand = true;
     }
     return g;
   });
@@ -1560,9 +1564,10 @@ function buildGroups() {
   const rk = dupe.rank || (dupe.rank = new Map());
   const known = g => g.some(it => rk.has(it.id));
   if (c.onlyDevice) groups = groups.filter(g => known(g) || g.some(it => onDevices(it.id).length));
-  // groups touching a device first, then the closest matches
-  const strength = g => g.files ? 1000 + g.files / 1000 : g.score;   // the same files beat any picture score
-  groups.sort((x, y) => (+y.some(it => onDevices(it.id).length) - +x.some(it => onDevices(it.id).length)) || strength(y) - strength(x));
+  // groups marked by hand first, then groups touching a device, then the closest matches
+  // marked by hand first, then the same files, which beat any picture score
+  const strength = g => g.hand ? 3000 : g.files ? 1000 + g.files / 1000 : g.score;
+  groups.sort((x, y) => (+y.hand - +x.hand) || (+y.some(it => onDevices(it.id).length) - +x.some(it => onDevices(it.id).length)) || strength(y) - strength(x));
   for (const g of groups) g.rank = Math.min(...g.map(it => rk.get(it.id) ?? Infinity));
   for (const g of groups) if (g.rank === Infinity) g.rank = dupe.rankNext = (dupe.rankNext || 0) + 1;
   for (const g of groups) for (const it of g) if (!rk.has(it.id)) rk.set(it.id, g.rank);
@@ -1646,7 +1651,8 @@ function renderDupes(keepScroll) {
   if (dupe.data) loadDupeDetails();
 }
 function groupDupeHtml(g, gi) {
-  const why = [g.files ? `有 ${Math.round(g.files / 10)}% 的文件相同（换了封面重新上传的）` : '',
+  const why = [g.hand ? '手动标出的同一皮肤（dupes\\extra_pairs.txt）' : '',
+    g.files ? `有 ${Math.round(g.files / 10)}% 的文件相同（换了封面重新上传的）` : '',
     g.score ? `最像的两个 ${Math.round(g.score / 10)}%${g.video ? '（视频画面，封面不像）' : ''}` : ''].filter(Boolean).join('，');
   return `<div class="dg" data-g="${gi}"><div class="gh"><span>${g.length} 个相似，${why}，不要的点「取消这个」</span><span class="grow"></span><a data-dnot title="这一组以后不再提示">这组不是重复</a></div>
     <div class="dgrid">${g.map(it => dupeTileHtml(it, gi, g)).join('')}</div></div>`;
