@@ -1444,7 +1444,7 @@ function toggleComments(a) {
 // cover from Steam. "保留这个": unsubscribe the others (subscribing account), move them on the devices to wer_trash,
 // and put the kept one on that device's "to send with WE" list.
 const dupe = { applied: null, data: null, loading: false, text: '', error: null, devices: null, devError: null, removed: new Set(), shown: 20, groups: [] };
-function dcfg() { return S.dupe = Object.assign({ min: 0.75, addrs: [], ignore: [], never: [], send: {}, onlyDevice: false, recent: true }, S.dupe || {}); }
+function dcfg() { return S.dupe = Object.assign({ min: 0.75, addrs: [], ignore: [], never: [], send: {}, onlyDevice: false, recent: true, pcOnly: false }, S.dupe || {}); }
 const pairKey = (a, b) => a < b ? a + '|' + b : b + '|' + a;
 const onDevices = id => (dupe.devices || []).filter(d => d.ids.includes(id));
 const dupeTitle = it => it.title || (items.get(it.id) || {}).title || it.id;
@@ -1503,7 +1503,10 @@ function buildGroups() {
   const never = new Set(c.never);   // "永不对比": never compared with anything
   const cut = Date.now() / 1000 - 365 * 86400;   // "只看一年内下载的": older ones were sorted out long ago
   const fresh = it => !c.recent || it.remote || !it.added || it.added >= cut;
+  // "只比电脑上有的": leave out what is only on a tablet / phone (gone from this PC, or never downloaded here)
+  const pc = it => !c.pcOnly || installed.has(it.id);
   const ok = (a, b) => dupeAlive(d.items[a]) && dupeAlive(d.items[b]) && fresh(d.items[a]) && fresh(d.items[b])
+    && pc(d.items[a]) && pc(d.items[b])
     && !never.has(d.items[a].id) && !never.has(d.items[b].id) && !ign.has(pairKey(d.items[a].id, d.items[b].id));
   // every two in a group must be similar enough (complete linkage). Joining by single pairs chained look-alikes
   // (A~B, B~C, C~D…) into one group of hundreds where most are not alike at all.
@@ -1578,6 +1581,7 @@ function renderDupes(keepScroll) {
       <label title="越往右越严格：只有几乎一样的才算一组；往左会把同一个人物的不同动作也算进来，但也更容易把画风相近的不同人物算进来">相似度 <input type="range" id="dmin" min="0.65" max="0.99" step="0.01" value="${c.min}"> <span class="num" id="dminv">${Math.round(c.min * 100)}%</span></label>
       <label><input type="checkbox" id="donly"${c.onlyDevice ? ' checked' : ''}> 只看平板 / 手机上有的</label>
       <label title="下载超过一年的壁纸不参与比较（视频画面也只截一年内的）"><input type="checkbox" id="drecent"${c.recent ? ' checked' : ''}> 只看一年内下载的</label>
+      <label title="电脑上已经没有、只在平板 / 手机上的壁纸不参与比较"><input type="checkbox" id="dpc"${c.pcOnly ? ' checked' : ''}> 只比电脑上有的</label>
       ${c.never.length ? `<button class="ghost" data-dnevlist title="这些壁纸不和任何壁纸比较；点开可以恢复">永不对比（${c.never.length}）</button>` : ''}
       <span id="dstatus"></span><span class="grow" style="flex:1"></span>
       ${dupe.data ? `<span>${total} 个壁纸，${dupe.groups.length} 组相似</span>` : ''}
@@ -1589,7 +1593,7 @@ function renderDupes(keepScroll) {
   if (!dupe.data) {
     list.innerHTML = `<div class="empty"><h3>找出内容相同的壁纸</h3>用图像识别模型比较每个壁纸的封面（动图取几帧），同一张图、同一个人物换了动作、不同作者做的同一个素材会归到一组，你来决定留哪个。<br>连着平板 / 手机时（USB 或无线 adb），它们上面的壁纸也一起比，旧的可以挪走、换成电脑上留下的那个。<br>第一次要下载约 90 MB 的模型，分析全部封面要几分钟；以后只分析新增的。</div>`;
   } else if (!dupe.groups.length) {
-    list.innerHTML = `<div class="empty">相似度 ${Math.round(c.min * 100)}% 以上没有相似的壁纸${c.onlyDevice ? '（只看了平板 / 手机上有的）' : ''}</div>`;
+    list.innerHTML = `<div class="empty">相似度 ${Math.round(c.min * 100)}% 以上没有相似的壁纸${c.onlyDevice ? '（只看了平板 / 手机上有的）' : ''}${c.pcOnly ? '（只比了电脑上有的）' : ''}</div>`;
   } else {
     if (compact) {
       // the small window works one group at a time: apply, cancel the ones you don't want, next group
@@ -1616,6 +1620,7 @@ function renderDupes(keepScroll) {
   r.onchange = () => { c.min = +r.value; save(); dupe.shown = 20; dupe.rank = null; dupe.sliding = false; dupe.renderLater = false; renderDupes(); };
   $('#donly').onchange = e => { c.onlyDevice = e.target.checked; save(); dupe.shown = 20; dupe.rank = null; renderDupes(); };
   $('#drecent').onchange = e => { c.recent = e.target.checked; save(); dupe.shown = 20; dupe.rank = null; renderDupes(); };
+  $('#dpc').onchange = e => { c.pcOnly = e.target.checked; save(); dupe.shown = 20; dupe.rank = null; renderDupes(); };
   $('#daddr').onchange = e => { c.addrs = e.target.value.split(/[,，\s]+/).map(x => x.trim()).filter(Boolean); save(); };
   if (keepScroll) main.scrollTop = top;
   if (dupe.data) loadDupeDetails();
