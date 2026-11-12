@@ -122,7 +122,11 @@ class NewsTranslate(private val feed: NewsFeed, private val store: NewsStore, pr
             val (key, force) = pending.removeFirst()
             val it = feed.items[key]
             val s = posts[key]
-            if (it == null || s == null) continue
+            if (s == null) continue
+            if (it == null) {
+                if (posts[key] === s) posts.remove(key)
+                continue
+            }
             running++
             scope.launch {
                 try {
@@ -158,7 +162,7 @@ class NewsTranslate(private val feed: NewsFeed, private val store: NewsStore, pr
             val now = SystemClock.elapsedRealtime()
             if (last != 0L && now - last < 120) return@translatePost
             last = now
-            val part = Translator.splitPost(text)
+            val part = Translator.splitPost(text, partial = true)
             main.post {
                 if (s.busy) {
                     s.title = part.title

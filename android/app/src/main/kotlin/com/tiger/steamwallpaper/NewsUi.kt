@@ -41,6 +41,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -276,7 +277,7 @@ private fun NewsCard(it: NewsItem) {
         }
         val tr = feed.tr
         // 自动翻译：出现在屏幕附近、不是目标语言的新闻
-        LaunchedEffect(it.key, tr.auto) { tr.autoQueue(it) }
+        LaunchedEffect(it.key, tr.auto, feed.store.translateTo) { tr.autoQueue(it) }
         Text(tr.title(it), fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 22.sp, modifier = Modifier.padding(top = 10.dp))
         TranslateNote(it)
         val img = it.image.ifEmpty { bbFirstImage(it.body) }.ifEmpty { it.release?.capsule ?: "" }
@@ -631,14 +632,15 @@ private fun NewsCommentsView(it: NewsItem) {
     val total = maxOf(c.total, c.list.size)
     val tr = feed.tr
     // 自动翻译：读到新的评论就翻
-    LaunchedEffect(c.list.size, tr.auto) { if (tr.auto && c.list.isNotEmpty()) tr.translateComments(it.key, auto = true) }
+    LaunchedEffect(c.list.size, tr.auto, feed.store.translateTo) { if (tr.auto && c.list.isNotEmpty()) tr.translateComments(it.key, auto = true) }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text("💬 $total 条评论", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.weight(1f))
         if (tr.configured) {
+            val untranslated = remember(c.list.size, c.tr.size, feed.store.translateTo) { c.list.count { m -> c.tr[m.id] == null && tr.needs(m.text) } }
             val link = when {
                 c.trLoading -> "正在翻译…"
-                c.tr.isNotEmpty() && c.list.none { m -> c.tr[m.id] == null && tr.needs(m.text) } -> if (c.trOn) "显示原文" else "显示译文"
-                c.list.any { m -> c.tr[m.id] == null && tr.needs(m.text) } -> "翻译评论"
+                untranslated > 0 -> "翻译评论"
+                c.tr.isNotEmpty() -> if (c.trOn) "显示原文" else "显示译文"
                 else -> null
             }
             if (link != null) {
@@ -807,10 +809,22 @@ private fun TranslateSettings() {
 
     SettingLabel("API 密钥", "用安卓系统的密钥库（Android Keystore）加密后保存，只有这台手机上的这个 App 能解开")
     var key by remember { mutableStateOf(Translator.unprotect(store.aiKeyEnc)) }
+    var keyDirty by remember { mutableStateOf(false) }
+    val saveKey = {
+        if (keyDirty) {
+            keyDirty = false
+            store.aiKeyEnc = Translator.protect(key.trim())
+            store.save()
+        }
+    }
+    LaunchedEffect(key) {
+        delay(800)
+        saveKey()
+    }
+    DisposableEffect(Unit) { onDispose { saveKey() } }
     SettingInput(key, "sk-…", KeyboardType.Password, password = true) {
         key = it
-        store.aiKeyEnc = Translator.protect(it.trim())
-        store.save()
+        keyDirty = true
     }
 
     SettingLabel("模型", if (claude) "留空用 ${Translator.DEFAULT_CLAUDE_MODEL}" else "留空用 ${Translator.DEFAULT_OPENAI_MODEL}（DeepSeek）；其他服务商填它的模型名")
@@ -883,6 +897,7 @@ private fun TranslateSettings() {
             Text(result, fontSize = 13.sp, color = if (failed) MaterialTheme.colorScheme.error else Color.Unspecified)
         }
         GlassButton(if (testing) "测试中…" else "测试", enabled = !testing, onClick = {
+            saveKey()
             testing = true
             failed = false
             result = "正在测试…"

@@ -181,9 +181,10 @@ object Translator {
     }
     private val HALF_SEPARATOR = Regex("\\n?=+[A-Z]*=*\\s*\$")
 
-    /** 把输出分成三部分；流式时末尾可能有半截分隔行，去掉。 */
-    fun splitPost(output: String): PostTranslation {
-        fun part(name: String) = PARTS.getValue(name).find(output)?.groupValues?.get(1)?.replace(HALF_SEPARATOR, "")?.trim() ?: ""
+    /** 把输出分成三部分；[partial]（流式还没翻完）时末尾可能有半截分隔行，去掉。 */
+    fun splitPost(output: String, partial: Boolean = false): PostTranslation {
+        fun part(name: String) = PARTS.getValue(name).find(output)?.groupValues?.get(1)
+            ?.let { if (partial) it.replace(HALF_SEPARATOR, "") else it }?.trim() ?: ""
         return PostTranslation(part("TITLE"), part("SUMMARY"), part("BODY"))
     }
 
@@ -253,7 +254,9 @@ object Translator {
         http.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful) throw IllegalStateException("翻译接口出错（${resp.code}）：" + errorText(resp.body.string()))
             if (!c.stream) {
-                val text = JSONObject(resp.body.string()).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content") ?: ""
+                val message = JSONObject(resp.body.string()).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")
+                val text = if (message == null || message.isNull("content")) "" else message.optString("content")
+                if (text.isBlank()) throw IllegalStateException("翻译接口没有返回译文")
                 onText?.invoke(text)
                 return text
             }
@@ -299,6 +302,12 @@ object Translator {
     /** 这些模型在官方接口上被安全分类器拒绝时，服务端自动换 Anthropic 推荐的模型重试（fallbacks: "default"）。 */
     private val FALLBACK_MODELS = setOf("claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5")
 
+    /** 不支持 effort 的老模型（中转上可能还在用）。 */
+    private val NO_EFFORT = Regex("^claude-(3|haiku-4|sonnet-4-5|sonnet-4-0|sonnet-4-2|opus-4-0|opus-4-1|opus-4-2)")
+
+    /** 不支持自适应思考的老模型（4.6 以前）。 */
+    private val NO_ADAPTIVE = Regex("^claude-(3|haiku-4|sonnet-4-5|sonnet-4-0|sonnet-4-2|opus-4-0|opus-4-1|opus-4-2|opus-4-5)")
+
     private var claudeId = ""
     private var claudeClient: AnthropicClient? = null
 
@@ -306,6 +315,7 @@ object Translator {
     private fun claudeClient(key: String, base: String): AnthropicClient {
         val id = "$base\n$key"
         claudeClient?.takeIf { claudeId == id }?.let { return it }
+        claudeClient?.close()
         val client = AnthropicOkHttpClient.builder().apiKey(key).baseUrl(base).timeout(Duration.ofMinutes(10)).build()
         claudeClient = client
         claudeId = id
@@ -322,9 +332,11 @@ object Translator {
             .maxTokens(if (c.stream) 64000L else 16000L)
             .system(system)
             .addUserMessage(user)
-            // 思考：自适应、effort 高；不思考：不开思考、effort 调到最低（新模型思考关不掉，只能让它少想）
-            .outputConfig(BetaOutputConfig.builder().effort(if (think) BetaOutputConfig.Effort.HIGH else BetaOutputConfig.Effort.LOW).build())
-        if (think) builder.thinking(BetaThinkingConfigAdaptive.builder().build())
+        // 思考：自适应、effort 高；不思考：不开思考、effort 调到最低（新模型思考关不掉，只能让它少想）。老模型不认这两个参数，不发
+        if (!NO_EFFORT.containsMatchIn(model)) {
+            builder.outputConfig(BetaOutputConfig.builder().effort(if (think) BetaOutputConfig.Effort.HIGH else BetaOutputConfig.Effort.LOW).build())
+        }
+        if (think && !NO_ADAPTIVE.containsMatchIn(model)) builder.thinking(BetaThinkingConfigAdaptive.builder().build())
         if (official && model in FALLBACK_MODELS) {
             // 官方接口上被安全分类器拒绝时，服务端按拒绝的类别自动换模型重试
             builder.addBeta(AnthropicBeta.SERVER_SIDE_FALLBACK_2026_07_01).fallbacksDefault()
