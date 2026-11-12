@@ -171,7 +171,7 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .post .txt b { font-size: 14px; }
 .post .txt p { margin: 4px 0 0; color: var(--fg2); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; }
 .pics { display: grid; gap: 6px; grid-template-columns: minmax(0, 380px); }
-.pics.multi { grid-template-columns: repeat(3, 1fr); }
+.pics.multi { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .pics.multi.n2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .pics .tile .t { font-size: 12px; font-weight: 500; margin: 4px 2px 0; }
 .pics .tile { margin: 0; padding: 0; border-radius: 6px; }
