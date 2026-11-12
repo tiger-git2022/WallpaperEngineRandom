@@ -294,7 +294,7 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .dt { cursor: pointer; }
 .dt.sel { background: var(--hover); outline: 2px solid var(--accent); }
 .dt .thumb img { object-fit: contain; }
-.dt .t { margin-top: 6px; font-weight: 600; white-space: normal; overflow-wrap: anywhere; line-height: 1.35; }
+.dt .t { margin-top: 6px; font-weight: 600; white-space: normal; overflow-wrap: anywhere; line-height: 1.35; min-height: 2.7em; }
 .dt .acts button.mark { flex: 1; }
 
 .dt .s { color: var(--fg3); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1495,7 +1495,21 @@ async function loadDupeDetails() {
       const r = await host.call('details', { ids: ids.slice(i, i + 100) });
       for (const f of (r.response || {}).publishedfiledetails || []) if (+f.result === 1) remember(f);
     } catch (e) { ids.slice(i, i + 100).forEach(id => dupeAsked.delete(id)); }
-    if (S.tab === 'dupes' && !current) renderDupes(true);
+    if (S.tab === 'dupes' && !current) fillDupeTiles(ids.slice(i, i + 100));
+  }
+}
+// titles, authors and dates that just arrived go into the tiles already on screen. Redrawing the whole list here
+// swapped every button out from under the mouse: a click landing at that moment did nothing
+function fillDupeTiles(ids) {
+  ensureProfiles([...new Set(ids.map(id => (items.get(id) || {}).creator).filter(Boolean))]);   // names fill in by themselves
+  for (const id of ids) {
+    if (!items.has(id)) continue;
+    const gi = dupe.groups.findIndex(g => g.some(x => x.id === id)); if (gi < 0) continue;
+    const g = dupe.groups[gi], fresh = h(dupeTileHtml(g.find(x => x.id === id), gi, g));
+    for (const el of document.querySelectorAll(`#dlist .dt[data-id="${id}"]`)) {
+      const t = el.querySelector('.t'), s = el.querySelector('.s'), ft = fresh.querySelector('.t'), fs = fresh.querySelector('.s');
+      t.textContent = ft.textContent; t.title = ft.title; s.innerHTML = fs.innerHTML;
+    }
   }
 }
 // a PC wallpaper that is gone from this PC (unsubscribed, Steam deleted the folder) and from the devices drops out
@@ -1634,7 +1648,7 @@ function renderDupes(keepScroll) {
 function groupDupeHtml(g, gi) {
   const why = [g.files ? `有 ${Math.round(g.files / 10)}% 的文件相同（换了封面重新上传的）` : '',
     g.score ? `最像的两个 ${Math.round(g.score / 10)}%${g.video ? '（视频画面，封面不像）' : ''}` : ''].filter(Boolean).join('，');
-  return `<div class="dg" data-g="${gi}"><div class="gh"><span>${g.length} 个相似，${why}，不要的点「取消这个」</span><span class="grow"></span><a data-dnot="${gi}" title="这一组以后不再提示">这组不是重复</a></div>
+  return `<div class="dg" data-g="${gi}"><div class="gh"><span>${g.length} 个相似，${why}，不要的点「取消这个」</span><span class="grow"></span><a data-dnot title="这一组以后不再提示">这组不是重复</a></div>
     <div class="dgrid">${g.map(it => dupeTileHtml(it, gi, g)).join('')}</div></div>`;
 }
 function dupeTileHtml(it, gi, g) {
@@ -1649,8 +1663,8 @@ function dupeTileHtml(it, gi, g) {
     <div class="t" title="${esc(dupeTitle(it))}">${esc(dupeTitle(it))}</div>
     <div class="s">${by || '&nbsp;'}</div><div class="s">${info || '&nbsp;'}</div>
     <div class="where">${where}</div>
-    <div class="acts"><button data-dapply="${it.id}" class="${on ? 'on' : ''}"${here ? ' title="放到电脑桌面上看效果，再点同组的另一个来对比"' : ' disabled title="这台电脑上没有，没法应用"'}>${on ? '✓ 桌面上' : '应用'}</button><button class="mark" data-dcancel="${gi}|${it.id}" title="取消订阅这个，从平板 / 手机挪走；这组其余的保留">取消这个</button></div>
-    <div class="links"><a data-ddetail="${it.id}">详情</a><a data-dout="${gi}|${it.id}" title="它和这组的其他壁纸不是同一个">移出这组</a><a data-dnever="${it.id}" title="确定它不会和任何壁纸重复：以后不再和其他壁纸比较（顶部「永不对比」里可以恢复）">永不对比</a></div></div>`;
+    <div class="acts"><button data-dapply="${it.id}" class="${on ? 'on' : ''}"${here ? ' title="放到电脑桌面上看效果，再点同组的另一个来对比"' : ' disabled title="这台电脑上没有，没法应用"'}>${on ? '✓ 桌面上' : '应用'}</button><button class="mark" data-dcancel="${it.id}" title="取消订阅这个，从平板 / 手机挪走；这组其余的保留">取消这个</button></div>
+    <div class="links"><a data-ddetail="${it.id}">详情</a><a data-dout="${it.id}" title="它和这组的其他壁纸不是同一个">移出这组</a><a data-dnever="${it.id}" title="确定它不会和任何壁纸重复：以后不再和其他壁纸比较（顶部「永不对比」里可以恢复）">永不对比</a></div></div>`;
 }
 function ask(html, okText) {
   return new Promise(res => {
@@ -1665,8 +1679,8 @@ function dupeGroupStep(d) {
   renderDupes(); $('#main').scrollTop = 0;
 }
 // "取消这个": cancel that wallpaper right away (no confirmation), keep the rest of its group
-async function cancelDupes(gi, cancelId) {
-  const g = dupe.groups[gi]; if (!g) return;
+async function cancelDupes(cancelId) {
+  const g = dupe.groups.find(g => g.some(x => x.id === cancelId)); if (!g) { renderDupes(true); return; }
   const others = g.filter(x => x.id === cancelId), kept = g.filter(x => x.id !== cancelId), c = dcfg();
   if (!others.length || !kept.length) return;
   const unsub = others.filter(x => subState(x.id) || onSteam(x.id));
@@ -1719,12 +1733,14 @@ document.addEventListener('click', async e => {
     catch (err) { toast('应用失败：' + errText(err), 6000); }
     renderDupes(true); return;
   }
-  const cx = t.closest('[data-dcancel]'); if (cx) { const [gi, id] = cx.dataset.dcancel.split('|'); cx.disabled = true; cx.innerHTML = '<span class="spin"></span>'; cancelDupes(+gi, id); return; }
+  const cx = t.closest('[data-dcancel]'); if (cx) { cx.disabled = true; cx.innerHTML = '<span class="spin"></span>'; cancelDupes(cx.dataset.dcancel); return; }
   const det = t.closest('[data-ddetail]'); if (det) { select(det.dataset.ddetail); return; }
   const out = t.closest('[data-dout]');
-  if (out) { const [gi, id] = out.dataset.dout.split('|'); const g = dupe.groups[+gi]; const c = dcfg(); for (const x of g) if (x.id !== id) c.ignore.push(pairKey(id, x.id)); save(); renderDupes(true); return; }
+  // "移出这组" / "这组不是重复" act on the wallpapers shown in that group
+  const shownIds = el => [...el.closest('.dg').querySelectorAll('.dt[data-id]')].map(x => x.dataset.id);
+  if (out) { const id = out.dataset.dout, c = dcfg(); for (const x of shownIds(out)) if (x !== id) c.ignore.push(pairKey(id, x)); save(); renderDupes(true); return; }
   const not = t.closest('[data-dnot]');
-  if (not) { const g = dupe.groups[+not.dataset.dnot]; const c = dcfg(); for (const a of g) for (const b of g) if (a.id < b.id) c.ignore.push(pairKey(a.id, b.id)); save(); renderDupes(true); return; }
+  if (not) { const g = shownIds(not), c = dcfg(); for (const a of g) for (const b of g) if (a < b) c.ignore.push(pairKey(a, b)); save(); renderDupes(true); return; }
   const nev = t.closest('[data-dnever]');
   if (nev) { const c = dcfg(); if (!c.never.includes(nev.dataset.dnever)) c.never.push(nev.dataset.dnever); save(); renderDupes(true); return; }
   const unnev = t.closest('[data-dunnever]');
