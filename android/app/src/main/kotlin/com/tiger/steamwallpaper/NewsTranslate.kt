@@ -83,7 +83,7 @@ class NewsTranslate(private val feed: NewsFeed, private val store: NewsStore, pr
     /** 收起时的摘要：译文的摘要，没有就用译文正文的开头。 */
     fun summary(item: NewsItem, original: String): String {
         val s = posts[item.key]?.takeIf { shown(item.key) } ?: return original
-        return s.summary.ifEmpty { if (s.body.isNotEmpty()) bbPlain(s.body) else original }
+        return s.summary.ifEmpty { if (s.body.isNotEmpty()) bbPlain(s.body, keepLines = true) else original }
     }
 
     /** 点「译」：没翻过就翻；翻完了在译文和原文之间切换；出错了重试。 */

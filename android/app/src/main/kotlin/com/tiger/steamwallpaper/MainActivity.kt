@@ -61,6 +61,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.foundation.layout.offset
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -383,18 +384,27 @@ private fun TabPages(onSort: (Rect) -> Unit, onFilter: () -> Unit) {
     LaunchedEffect(pager) {
         snapshotFlow { pager.currentPage + pager.currentPageOffsetFraction }.collect { tabPos.floatValue = it }
     }
-    // 点标签栏：滑到那一页
+    // 点标签栏：滑到那一页。每点一次都重新滑（上次的滑动被打断、页面没过去时，再点同一个标签也要能过去）；
+    // 新的点击取消还没滑完的那次
+    var animating by remember { mutableStateOf(false) }
     LaunchedEffect(pager) {
-        snapshotFlow { ws.store.tab }.collect { t ->
+        snapshotFlow { ws.store.tab to tabTaps.intValue }.collectLatest { (t, _) ->
             val i = keys.indexOf(t)
-            if (i >= 0 && i != pager.targetPage) pager.animateScrollToPage(i)
+            if (i < 0 || (i == pager.currentPage && pager.currentPageOffsetFraction == 0f)) return@collectLatest
+            animating = true
+            try {
+                pager.animateScrollToPage(i)
+            } finally {
+                animating = false
+            }
         }
     }
-    // 滑到一页停下：就是切到那个标签
+    // 停下来（手指滑停、或者点标签的滑动结束 / 被打断）：当前标签以真正停在的那一页为准
     LaunchedEffect(pager) {
-        snapshotFlow { pager.settledPage }.collect { p ->
+        snapshotFlow { Triple(pager.settledPage, pager.isScrollInProgress, animating) }.collect { (p, scrolling, anim) ->
+            if (scrolling || anim) return@collect
             val t = keys[p]
-            if (t != ws.store.tab && !pager.isScrollInProgress) ws.openTab(t)
+            if (t != ws.store.tab) ws.openTab(t)
         }
     }
     androidx.compose.foundation.pager.HorizontalPager(pager, modifier = Modifier.fillMaxSize(), key = { keys[it] }) { p ->
@@ -480,6 +490,7 @@ private fun TabBar(modifier: Modifier) {
                         } else {
                             ws.detail = null
                             ws.openTab(t.key)
+                            tabTaps.intValue++
                         }
                     },
             )
@@ -509,6 +520,9 @@ private fun TabBar(modifier: Modifier) {
     }
     }
 }
+
+/** 点标签的次数：点的还是同一个标签（上次没滑过去）时也要再滑一次。 */
+private val tabTaps = androidx.compose.runtime.mutableIntStateOf(0)
 
 /** 标签页左右滑动时的实时位置（0 = 新闻，1 = 壁纸动态，2 = 浏览工坊，3 = 关注的作者，中间值 = 正在滑）。 */
 private val tabPos = androidx.compose.runtime.mutableFloatStateOf(
