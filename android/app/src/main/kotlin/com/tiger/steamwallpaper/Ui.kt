@@ -408,10 +408,19 @@ fun SubscribeRow(it: Item, big: Boolean = false) {
     }
     // 和「已关注」一样：已订阅也是按钮，点一下取消订阅
     val size = if (big) Modifier.fillMaxWidth().heightIn(min = 44.dp) else Modifier
-    if (sub) {
-        GlassButton("✓ 已订阅", onClick = { ws.subscribe(it, false) }, accent = Tones.Ok, modifier = size)
-    } else {
-        GlassButton("+ 订阅", onClick = { ws.subscribe(it, true) }, primary = true, modifier = size)
+    Column {
+        if (sub) {
+            GlassButton("✓ 已订阅", onClick = { ws.subscribe(it, false) }, accent = Tones.Ok, modifier = size)
+        } else {
+            GlassButton("+ 订阅", onClick = { ws.subscribe(it, true) }, primary = true, modifier = size)
+        }
+        // 打开详情时到网页上核对订阅状态：正在读时说一声（这时点了订阅，以点的为准，核对结果不会把它改回去）
+        if (ws.checkingSub.containsKey(it.id)) {
+            Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp)
+                Text("  正在到 Steam 上核对订阅状态…", fontSize = 12.sp)
+            }
+        }
     }
 }
 

@@ -348,7 +348,9 @@ private fun SubsStatus() {
             Text(
                 when {
                     ws.subsLoading -> ws.subsStatus.ifEmpty { "正在读取订阅列表…" }
-                    known -> "订阅列表里有 ${store.remoteSubs.size} 个（" + ago(store.remoteSubsTime / 1000) + "读取）；打开详情时还会单独核对"
+                    known -> "订阅列表里有 ${store.remoteSubs.size} 个（完整的" + ago(store.remoteSubsTime / 1000) + "读取，一天重读一次" +
+                        (if (ws.recentSyncing) "；正在同步最近的" else if (ws.recentSyncedAt > 0) "；最近订阅的" + ago(ws.recentSyncedAt / 1000) + "同步" else "") +
+                        "）；回到 App 时同步最近订阅的，打开详情时还会单独核对"
                     else -> "还没读取订阅列表"
                 },
                 fontSize = 13.sp,

@@ -159,8 +159,10 @@ class Workshop(val steam: Steam, val sub: Steam, val store: Store, private val s
         refreshSub()
         val changed = steam.syncCookies()
         scope.launch {
-            // 登录状态都读完后（下面的 me 也更新了）再看订阅列表要不要读
+            // 登录状态都读完后（下面的 me 也更新了）再看订阅列表要不要读：换了账号、或者一天没读过完整的就全部重读，
+            // 否则只同步第一页（新订阅的、刚取消的）
             loadRemoteSubs(force = store.remoteSubsOwner.isNotEmpty() && store.remoteSubsOwner != subscriber.steamId)
+            syncRecentSubs()
         }
         if (!changed && me.steamId == steam.steamId) return
         me = Me(steam.loggedIn, steam.steamId, store.profiles[steam.steamId]?.name ?: "", store.profiles[steam.steamId]?.avatar ?: "")
@@ -312,6 +314,8 @@ class Workshop(val steam: Steam, val sub: Steam, val store: Store, private val s
         n.restored = !reposition
         v.refreshing = n
         loadMore(n)
+        // 顺便同步一下最近订阅的
+        syncRecentSubs()
     }
 
     /** 切到后台的时间。 */
@@ -759,22 +763,25 @@ class Workshop(val steam: Steam, val sub: Steam, val store: Store, private val s
     private val localSub = mutableStateMapOf<String, Boolean>()
     private val localSubAt = HashMap<String, Long>()
 
+    /** 正在到网页上核对订阅状态的壁纸（打开详情时；值是同时在核对的次数）。 */
+    val checkingSub = mutableStateMapOf<String, Int>()
+
     private fun changedSince(owner: String, id: String, started: Long) = (localSubAt["$owner/$id"] ?: 0L) >= started - 60_000L
 
     var subsLoading by mutableStateOf(false)
         private set
 
     /**
-     * 读订阅账号（没有时是浏览账号）在 Steam 上的订阅列表，在所有列表和详情里显示「已订阅」。半小时内读过就不重读，
-     * [force] 时（手动刷新、换了账号）一定读。
+     * 读订阅账号（没有时是浏览账号）在 Steam 上的完整订阅列表，在所有列表和详情里显示「已订阅」。一天内读过就不重读
+     * （很久以前的订阅很少取消，平时由 [syncRecentSubs] 只同步第一页），[force] 时（手动刷新、换了账号、第一页对不上）一定读。
      */
-    fun loadRemoteSubs(force: Boolean = false) {
+    fun loadRemoteSubs(force: Boolean = false, quiet: Boolean = false) {
         val acct = subscriber
         if (!acct.loggedIn || subsLoading) return
         val owner = acct.steamId
-        if (!force && store.remoteSubsOwner == owner && System.currentTimeMillis() - store.remoteSubsTime < 30 * 60_000L) return
-        // 换了账号或手动刷新时读完要告诉用户；半小时一次的自动刷新不打扰
-        val announce = force || store.remoteSubsOwner != owner
+        if (!force && store.remoteSubsOwner == owner && System.currentTimeMillis() - store.remoteSubsTime < 24 * 3600_000L) return
+        // 换了账号或手动刷新时读完要告诉用户；自动重读不打扰
+        val announce = !quiet && (force || store.remoteSubsOwner != owner)
         subsLoading = true
         subsError = null
         subsProgress = 0f
@@ -827,6 +834,7 @@ class Workshop(val steam: Steam, val sub: Steam, val store: Store, private val s
                     store.remoteSubsOwner = owner
                     store.remoteSubsTime = System.currentTimeMillis()
                     store.remoteSubsTotal = total
+                    store.remoteSubsHead = first.ids
                     store.save()
                     Log.i("读取订阅列表（$owner）：网页上写共 $total 个，读到 ${all.size} 个（$pages 页，$failed 页失败）")
                     if (failed > 0) subsError = "有 $failed 页没读到，订阅状态可能不全，可以再刷新一次"
@@ -840,6 +848,77 @@ class Workshop(val steam: Steam, val sub: Steam, val store: Store, private val s
             subsLoading = false
             subsProgress = null
             subsStatus = ""
+        }
+    }
+
+    /** 正在同步订阅列表的第一页；上次同步完的时间（毫秒）。 */
+    var recentSyncing by mutableStateOf(false)
+        private set
+    var recentSyncedAt by mutableStateOf(0L)
+        private set
+    private var fullAutoAt = 0L
+
+    /**
+     * 只读订阅列表的第一页（30 个），同步新订阅的和第一页里刚取消的（回到前台时，一分钟最多一次）。
+     * 网页上的总数和这次看出来的增减对不上时（比如在电脑上取消了很早以前的订阅），在后台重读完整的列表（十分钟最多一次）。
+     */
+    fun syncRecentSubs() {
+        val acct = subscriber
+        if (!acct.loggedIn || subsLoading || recentSyncing) return
+        val owner = acct.steamId
+        if (store.remoteSubsOwner != owner) return
+        val started = System.currentTimeMillis()
+        if (started - recentSyncedAt < 60_000L) return
+        recentSyncing = true
+        scope.launch {
+            try {
+                val page = acct.subscriptions(1)
+                if (acct.steamId != owner || store.remoteSubsOwner != owner || subsLoading) return@launch
+                val fresh = page.ids
+                val freshSet = fresh.toHashSet()
+                val old = store.remoteSubsHead
+                var added = 0
+                var removed = 0
+                for (id in fresh) {
+                    if (changedSince(owner, id, started)) continue
+                    if (!store.remoteSubs.containsKey(id)) {
+                        store.remoteSubs[id] = true
+                        added++
+                    }
+                }
+                old.forEachIndexed { i, id ->
+                    if (id in freshSet || changedSince(owner, id, started)) return@forEachIndexed
+                    // 上次第一页里排在它后面的还在第一页：它是被取消了（不是被新订阅的挤到第二页）
+                    if (old.subList(i + 1, old.size).any { it in freshSet } && store.remoteSubs.remove(id) != null) {
+                        store.subscribed.remove(id)
+                        removed++
+                    }
+                }
+                store.remoteSubsHead = fresh
+                // 两分钟内在 App 里点过订阅：网页上的总数可能还没跟上，这次不比
+                val recentLocal = localSubAt.any { (k, at) -> k.startsWith("$owner/") && at >= started - 120_000L }
+                var mismatch = false
+                if (!recentLocal && page.total > 0) {
+                    mismatch = store.remoteSubsTotal > 0 && page.total - store.remoteSubsTotal != added - removed
+                    store.remoteSubsTotal = page.total
+                }
+                store.save()
+                recentSyncedAt = System.currentTimeMillis()
+                if (added > 0 || removed > 0 || mismatch) {
+                    Log.i("同步订阅列表第一页：新增 $added 个，取消 $removed 个" + if (mismatch) "；总数对不上（网页上 ${page.total} 个），重读完整的列表" else "")
+                }
+                if (mismatch && started - fullAutoAt > 10 * 60_000L) {
+                    fullAutoAt = started
+                    recentSyncing = false
+                    loadRemoteSubs(force = true, quiet = true)
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.i("同步订阅列表第一页失败（$owner）：${e.message}")
+            } finally {
+                recentSyncing = false
+            }
         }
     }
 
@@ -857,8 +936,16 @@ class Workshop(val steam: Steam, val sub: Steam, val store: Store, private val s
         if (!acct.loggedIn) return
         val owner = acct.steamId
         val started = System.currentTimeMillis()
+        checkingSub[id] = (checkingSub[id] ?: 0) + 1
         scope.launch {
-            val on = runCatching { acct.subscribedOnPage(id) }.getOrNull() ?: return@launch
+            val on = (
+                try {
+                    runCatching { acct.subscribedOnPage(id) }.getOrNull()
+                } finally {
+                    val n = (checkingSub[id] ?: 1) - 1
+                    if (n <= 0) checkingSub.remove(id) else checkingSub[id] = n
+                }
+                ) ?: return@launch
             // 读网页的时候（或之前一分钟内）在 App 里点过订阅 / 取消订阅：网页可能还是旧的，以点的为准
             if (changedSince(owner, id, started)) return@launch
             localSub.remove("$owner/$id")
@@ -890,7 +977,11 @@ class Workshop(val steam: Steam, val sub: Steam, val store: Store, private val s
             localSub["$owner/${it.id}"] = on
             localSubAt["$owner/${it.id}"] = System.currentTimeMillis()
             if (store.remoteSubsOwner == owner || store.remoteSubsOwner == acct.steamId) {
+                val was = store.remoteSubs.containsKey(it.id)
                 if (on) store.remoteSubs[it.id] = true else store.remoteSubs.remove(it.id)
+                if (on && !was) store.remoteSubsTotal++
+                if (!on && was) store.remoteSubsTotal = maxOf(0, store.remoteSubsTotal - 1)
+                if (!on) store.remoteSubsHead = store.remoteSubsHead - it.id
             }
             if (on) {
                 store.subscribed[it.id] = System.currentTimeMillis()

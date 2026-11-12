@@ -49,6 +49,9 @@ class Store(private val file: File, private val scope: CoroutineScope) {
     var remoteSubsTime by mutableLongStateOf(0L)
     var remoteSubsTotal by mutableIntStateOf(0)
 
+    /** 订阅列表第一页上次读到的样子（按网页的顺序），用来看出第一页里哪个被取消了。 */
+    var remoteSubsHead: List<String> = emptyList()
+
     /** 登录过订阅账号（大号）：之后启动时才去读它的配置文件（不用时不初始化 WebView）。 */
     var subAccount by mutableStateOf(false)
 
@@ -93,6 +96,7 @@ class Store(private val file: File, private val scope: CoroutineScope) {
             remoteSubsOwner = o.optString("remoteSubsOwner")
             remoteSubsTime = o.optLong("remoteSubsTime")
             remoteSubsTotal = o.optInt("remoteSubsTotal")
+            remoteSubsHead = o.optJSONArray("remoteSubsHead")?.strings() ?: emptyList()
             glassBlur = o.optInt("glassBlur", 25).coerceIn(0, 100)
             glassTint = o.optInt("glassTint", 40).coerceIn(0, 100)
             glassFringe = o.optInt("glassFringe", 50).coerceIn(0, 100)
@@ -133,6 +137,7 @@ class Store(private val file: File, private val scope: CoroutineScope) {
         o.put("remoteSubsOwner", remoteSubsOwner)
         o.put("remoteSubsTime", remoteSubsTime)
         o.put("remoteSubsTotal", remoteSubsTotal)
+        o.put("remoteSubsHead", JSONArray(remoteSubsHead))
         o.put("glassBlur", glassBlur)
         o.put("glassTint", glassTint)
         o.put("glassFringe", glassFringe)
