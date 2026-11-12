@@ -22,6 +22,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
@@ -39,6 +41,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -51,17 +54,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -265,17 +275,21 @@ private fun NewsCard(it: NewsItem) {
             ReleaseBody(it)
             return@Column
         }
-        Text(it.title, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 22.sp, modifier = Modifier.padding(top = 10.dp))
+        val tr = feed.tr
+        // 自动翻译：出现在屏幕附近、不是目标语言的新闻
+        LaunchedEffect(it.key, tr.auto, feed.store.translateTo) { tr.autoQueue(it) }
+        Text(tr.title(it), fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 22.sp, modifier = Modifier.padding(top = 10.dp))
+        TranslateNote(it)
         val img = it.image.ifEmpty { bbFirstImage(it.body) }.ifEmpty { it.release?.capsule ?: "" }
         if (img.isNotEmpty() && !open) {
             BigPicture(img, Modifier.padding(top = 10.dp), maxHeight = 420.dp, onLongClick = { LocalActions.lightbox(img) }, onClick = toggle)
         }
         if (open) {
-            NewsBody(it.body)
+            NewsBody(tr.body(it))
             ToggleHint("收起", Icons.Default.ExpandLess)
         } else {
-            // 收起时也保留分段和换行（和展开后一样），最多显示 8 行
-            val sum = it.summary.ifEmpty { bbPlain(it.body, keepLines = true) }
+            // 收起时也保留分段和换行（和展开后一样），最多显示 8 行；翻译了就显示译文
+            val sum = tr.summary(it, it.summary.ifEmpty { bbPlain(it.body, keepLines = true) })
             if (sum.isNotEmpty()) {
                 Text(sum.take(600), fontSize = 14.sp, lineHeight = 20.sp, maxLines = 8, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
             }
@@ -345,6 +359,10 @@ private fun SourceRow(it: NewsItem) {
             }
             Text(meta, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
+        if (it.kind == "event" && it.gid.isNotEmpty() && feed.tr.configured) {
+            TranslateButton(it)
+            Spacer(Modifier.width(8.dp))
+        }
         val url = if (it.kind == "release") it.release?.url ?: "" else it.url
         if (url.isNotEmpty()) {
             GlassIconButton(Icons.AutoMirrored.Filled.OpenInNew, "在浏览器中打开") { openUrl(context, url) }
@@ -352,6 +370,46 @@ private fun SourceRow(it: NewsItem) {
         if (it.block.isNotEmpty()) {
             Spacer(Modifier.width(8.dp))
             BlockButton(it)
+        }
+    }
+}
+
+/** 「译」：翻译 / 显示原文；显示译文时亮起主题色。 */
+@Composable
+private fun TranslateButton(it: NewsItem) {
+    val tr = news.tr
+    val on = tr.shown(it.key)
+    val primary = MaterialTheme.colorScheme.primary
+    Box(
+        Modifier.size(34.dp).frost(CircleShape)
+            .then(if (on) Modifier.background(primary.copy(alpha = 0.22f), CircleShape) else Modifier)
+            .clickable { tr.click(it.key) },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text("译", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = if (on) primary else MaterialTheme.colorScheme.onSurface)
+    }
+}
+
+/** 标题下面的一行小字：正在翻译 / 机器翻译 · 显示原文 / 翻译失败 · 重试。 */
+@Composable
+private fun TranslateNote(it: NewsItem) {
+    val tr = news.tr
+    val s = tr.posts[it.key] ?: return
+    val scheme = MaterialTheme.colorScheme
+    Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        when {
+            s.error != null -> {
+                Text("翻译失败：${s.error}", fontSize = 12.sp, color = scheme.error, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                Text(" · 重试", fontSize = 12.sp, color = scheme.primary, fontWeight = FontWeight.Medium, modifier = Modifier.clickable { tr.click(it.key) })
+            }
+            s.busy -> {
+                CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp)
+                Text("  正在翻译…", fontSize = 12.sp)
+            }
+            s.done -> {
+                Text(if (s.orig) "🌐 显示的是原文 · " else "🌐 机器翻译 · ", fontSize = 12.sp)
+                Text(if (s.orig) "显示译文" else "显示原文", fontSize = 12.sp, color = scheme.primary, fontWeight = FontWeight.Medium, modifier = Modifier.clickable { tr.click(it.key) })
+            }
         }
     }
 }
@@ -605,7 +663,28 @@ private fun NewsCommentsView(it: NewsItem) {
         return
     }
     val total = maxOf(c.total, c.list.size)
-    Text("💬 $total 条评论", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+    val tr = feed.tr
+    // 自动翻译：读到新的评论就翻
+    LaunchedEffect(c.list.size, tr.auto, feed.store.translateTo) { if (tr.auto && c.list.isNotEmpty()) tr.translateComments(it.key, auto = true) }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("💬 $total 条评论", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.weight(1f))
+        if (tr.configured) {
+            val untranslated = remember(c.list.size, c.tr.size, feed.store.translateTo) { c.list.count { m -> c.tr[m.id] == null && tr.needs(m.text) } }
+            val link = when {
+                c.trLoading -> "正在翻译…"
+                untranslated > 0 -> "翻译评论"
+                c.tr.isNotEmpty() -> if (c.trOn) "显示原文" else "显示译文"
+                else -> null
+            }
+            if (link != null) {
+                Text(
+                    link, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable(enabled = !c.trLoading) { tr.translateComments(it.key, auto = false) }.padding(vertical = 4.dp),
+                )
+            }
+        }
+    }
+    c.trError?.let { e -> Text("翻译失败：$e", fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
     c.list.forEach { m ->
         Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
             Avatar(m.avatar, 30.dp, Modifier.clickable(enabled = m.url.isNotEmpty()) { openUrl(context, m.url) })
@@ -614,7 +693,7 @@ private fun NewsCommentsView(it: NewsItem) {
                     Text(m.name, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                     if (m.t > 0) Text("  " + whenText(m.t), fontSize = 12.sp, maxLines = 1)
                 }
-                Text(m.text, fontSize = 14.sp, lineHeight = 20.sp, modifier = Modifier.padding(top = 1.dp))
+                Text(c.tr[m.id]?.takeIf { c.trOn } ?: m.text, fontSize = 14.sp, lineHeight = 20.sp, modifier = Modifier.padding(top = 1.dp))
             }
         }
     }
@@ -659,6 +738,8 @@ fun NewsSettingsSheet(open: Boolean, onDismiss: () -> Unit) {
                 store.refreshMinutes = ((it / 15f).roundToInt() * 15)
                 store.save()
             }
+            HorizontalDivider(Modifier.padding(vertical = 12.dp))
+            TranslateSettings()
             HorizontalDivider(Modifier.padding(vertical = 12.dp))
             Text("屏蔽的游戏和账号", fontWeight = FontWeight.Medium)
             Text("在每条右上角的「⋯」里屏蔽；屏蔽后它的新闻和新发售都不再显示。", fontSize = 13.sp)
@@ -718,5 +799,186 @@ private fun NumberSlider(title: String, value: String, current: Float, range: Cl
         Text(title, fontWeight = FontWeight.Medium)
         Text(value, fontSize = 13.sp)
         Slider(value = current, onValueChange = onChange, valueRange = range, steps = steps)
+    }
+}
+
+// ---- 翻译设置 ----
+
+/** 翻译（大模型）：和电脑版设置页的「翻译」一样。改了马上保存；API 密钥加密后保存。 */
+@Composable
+private fun TranslateSettings() {
+    val feed = news
+    val store = feed.store
+    val claude = store.aiFormat == "anthropic"
+    val scope = rememberCoroutineScope()
+    Text("翻译（大模型）", fontWeight = FontWeight.Medium)
+    Text("每条新闻右上角的「译」翻译标题、摘要和正文，评论区可以「翻译评论」；翻过的会记住，不重复花额度。", fontSize = 13.sp)
+
+    SettingLabel("接口格式", "OpenAI 兼容：DeepSeek、通义千问、Kimi、智谱、硅基流动、OpenRouter、OpenAI 等都用这个")
+    PillRow(Modifier.padding(top = 8.dp)) {
+        listOf("openai" to "OpenAI 兼容", "anthropic" to "Anthropic Claude").forEach { (v, label) ->
+            Pill(label, onClick = {
+                if (store.aiFormat != v) {
+                    // 换了格式：地址和模型回到默认（两边的地址、模型名不通用）
+                    store.aiFormat = v
+                    store.aiBaseUrl = ""
+                    store.aiModel = ""
+                    store.aiThinkModel = ""
+                    store.save()
+                }
+            }, selected = store.aiFormat == v)
+        }
+    }
+
+    SettingLabel(
+        "接口地址",
+        if (claude) "留空用官方接口 ${Translator.DEFAULT_CLAUDE_BASE}；用中转的话填中转地址"
+        else "填到 /v1 为止，例如 https://api.deepseek.com/v1、https://dashscope.aliyuncs.com/compatible-mode/v1",
+    )
+    SettingInput(store.aiBaseUrl, if (claude) Translator.DEFAULT_CLAUDE_BASE else Translator.DEFAULT_OPENAI_BASE, KeyboardType.Uri) {
+        store.aiBaseUrl = it.trim()
+        store.save()
+    }
+
+    SettingLabel("API 密钥", "用安卓系统的密钥库（Android Keystore）加密后保存，只有这台手机上的这个 App 能解开")
+    var key by remember { mutableStateOf(Translator.unprotect(store.aiKeyEnc)) }
+    var keyDirty by remember { mutableStateOf(false) }
+    val saveKey = {
+        if (keyDirty) {
+            keyDirty = false
+            store.aiKeyEnc = Translator.protect(key.trim())
+            store.save()
+        }
+    }
+    LaunchedEffect(key) {
+        delay(800)
+        saveKey()
+    }
+    DisposableEffect(Unit) { onDispose { saveKey() } }
+    SettingInput(key, "sk-…", KeyboardType.Password, password = true) {
+        key = it
+        keyDirty = true
+    }
+
+    SettingLabel("模型", if (claude) "留空用 ${Translator.DEFAULT_CLAUDE_MODEL}" else "留空用 ${Translator.DEFAULT_OPENAI_MODEL}（DeepSeek）；其他服务商填它的模型名")
+    SettingInput(store.aiModel, if (claude) Translator.DEFAULT_CLAUDE_MODEL else Translator.DEFAULT_OPENAI_MODEL) {
+        store.aiModel = it.trim()
+        store.save()
+    }
+
+    SettingLabel(
+        "思考",
+        if (claude) "思考：开自适应思考；不思考：把 effort 调到最低（新的 Claude 模型思考关不掉，只能让它少想）"
+        else "按接口地址自动用对应的开关（通义 / 硅基流动 enable_thinking，智谱 / 火山 thinking，OpenRouter reasoning）；其他服务商用下面的「思考时换用的模型」",
+    )
+    PillRow(Modifier.padding(top = 8.dp)) {
+        listOf("off" to "不思考", "on" to "思考", "auto" to "超过一定字数才思考").forEach { (v, label) ->
+            Pill(label, onClick = {
+                store.aiThink = v
+                store.save()
+            }, selected = store.aiThink == v)
+        }
+    }
+    if (store.aiThink == "auto") {
+        Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            var words by remember { mutableStateOf(store.aiThinkWords.toString()) }
+            SettingInput(words, "800", KeyboardType.Number, modifier = Modifier.width(110.dp)) {
+                words = it.filter(Char::isDigit).take(6)
+                words.toIntOrNull()?.let { n ->
+                    store.aiThinkWords = n
+                    store.save()
+                }
+            }
+            Text("词以上才思考（中文一个字算一个词）", fontSize = 13.sp, modifier = Modifier.padding(start = 10.dp, top = 6.dp))
+        }
+    }
+
+    SettingLabel("思考时换用的模型（可选）", "有的服务商靠换模型来开思考，比如 DeepSeek 的 deepseek-reasoner、Kimi 的 thinking 模型。留空就用上面的模型")
+    SettingInput(store.aiThinkModel, "") {
+        store.aiThinkModel = it.trim()
+        store.save()
+    }
+
+    Spacer(Modifier.height(14.dp))
+    SwitchRow("流式输出", "边翻译边显示；关掉就等整篇翻完一次显示", store.aiStream) {
+        store.aiStream = it
+        store.save()
+    }
+    Spacer(Modifier.height(12.dp))
+    SwitchRow("自动翻译", "不是目标语言的新闻和评论，出现时自动翻译（会消耗 API 额度）。关掉时用每条右上角的「译」手动翻译", store.autoTranslate) {
+        store.autoTranslate = it
+        store.save()
+    }
+
+    SettingLabel("翻译成", "")
+    PillRow(Modifier.padding(top = 8.dp)) {
+        Translator.TARGETS.forEach { t ->
+            Pill(t, onClick = {
+                store.translateTo = t
+                store.save()
+                feed.tr.checkLang()
+            }, selected = store.translateTo == t)
+        }
+    }
+
+    var testing by remember { mutableStateOf(false) }
+    var result by remember { mutableStateOf("用上面的设置翻译一句话，看能不能用") }
+    var failed by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth().padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+            Text("测试", fontWeight = FontWeight.Medium)
+            Text(result, fontSize = 13.sp, color = if (failed) MaterialTheme.colorScheme.error else Color.Unspecified)
+        }
+        GlassButton(if (testing) "测试中…" else "测试", enabled = !testing, onClick = {
+            saveKey()
+            testing = true
+            failed = false
+            result = "正在测试…"
+            scope.launch {
+                try {
+                    result = "可以用：" + Translator.test(feed.tr.config())
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    failed = true
+                    result = "失败：" + Translator.errText(e)
+                }
+                testing = false
+            }
+        })
+    }
+}
+
+@Composable
+private fun SettingLabel(title: String, hint: String) {
+    Text(title, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 14.dp))
+    if (hint.isNotEmpty()) Text(hint, fontSize = 13.sp)
+}
+
+/** 单行输入框：磨砂玻璃底的圆角框，空的时候显示灰色的默认值。 */
+@Composable
+private fun SettingInput(
+    value: String,
+    placeholder: String,
+    keyboard: KeyboardType = KeyboardType.Text,
+    password: Boolean = false,
+    modifier: Modifier = Modifier.fillMaxWidth(),
+    onChange: (String) -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Box(modifier.padding(top = 6.dp).frost(RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 10.dp), contentAlignment = Alignment.CenterStart) {
+        if (value.isEmpty() && placeholder.isNotEmpty()) {
+            Text(placeholder, color = scheme.onSurface.copy(alpha = 0.4f), fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        BasicTextField(
+            value = value,
+            onValueChange = onChange,
+            singleLine = true,
+            textStyle = TextStyle(color = scheme.onSurface, fontSize = 15.sp),
+            cursorBrush = SolidColor(scheme.primary),
+            visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
+            keyboardOptions = KeyboardOptions(keyboardType = keyboard, autoCorrectEnabled = false, imeAction = ImeAction.Done),
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }

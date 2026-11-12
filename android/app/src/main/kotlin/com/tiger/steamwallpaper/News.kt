@@ -92,6 +92,12 @@ class NewsComments(total: Int) {
     var total by mutableIntStateOf(total)
     var loading by mutableStateOf(false)
     var error by mutableStateOf<String?>(null)
+
+    /** 翻译：评论 id → 译文；[trOn] 显示译文还是原文。 */
+    val tr = mutableStateMapOf<String, String>()
+    var trOn by mutableStateOf(false)
+    var trLoading by mutableStateOf(false)
+    var trError by mutableStateOf<String?>(null)
 }
 
 /**
@@ -182,6 +188,9 @@ class NewsFeed(val session: StoreSession, val store: NewsStore, private val cach
     val busy = mutableStateMapOf<String, Boolean>()
     val comments = mutableStateMapOf<String, NewsComments>()
     val expanded = mutableStateMapOf<String, Boolean>()
+
+    /** 大模型翻译（新闻和评论）。 */
+    val tr by lazy { NewsTranslate(this, store, File(App.instance.filesDir, "translations.json"), scope) }
     val list = LazyListState()
 
     private var loadJob: Job? = null
