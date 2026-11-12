@@ -88,7 +88,11 @@ android {
     }
 
     packaging {
-        resources.excludes += listOf("/META-INF/{AL2.0,LGPL2.1}", "/META-INF/*.version", "/kotlin/**", "DebugProbesKt.bin")
+        resources.excludes += listOf(
+            "/META-INF/{AL2.0,LGPL2.1}", "/META-INF/*.version", "/kotlin/**", "DebugProbesKt.bin",
+            // Anthropic SDK 带进来的 Jackson 等库里重复的说明文件
+            "/META-INF/versions/9/OSGI-INF/MANIFEST.MF", "/META-INF/LICENSE*", "/META-INF/NOTICE*", "/META-INF/DEPENDENCIES", "/META-INF/INDEX.LIST",
+        )
     }
 
     lint {
@@ -128,4 +132,6 @@ dependencies {
     implementation("io.coil-kt.coil3:coil-network-okhttp")
     implementation(platform("com.squareup.okhttp3:okhttp-bom:5.5.0"))
     implementation("com.squareup.okhttp3:okhttp")
+    // 新闻翻译用 Claude 时走 Anthropic 官方 Java SDK（jar 里自带 R8 规则）
+    implementation("com.anthropic:anthropic-java:3.8.0")
 }

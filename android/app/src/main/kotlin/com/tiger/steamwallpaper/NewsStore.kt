@@ -76,6 +76,29 @@ class NewsStore(private val file: File, private val scope: CoroutineScope) {
     /** 自动刷新间隔（分钟）：回到 App 时超过这么久没刷新就刷新。 */
     var refreshMinutes by mutableIntStateOf(30)
 
+    // ---- 翻译（大模型），和电脑版的设置一样 ----
+    /** 接口格式：openai（OpenAI 兼容）/ anthropic（Claude）。 */
+    var aiFormat by mutableStateOf("openai")
+
+    /** 接口地址；空 = 默认（DeepSeek / Anthropic 官方）。 */
+    var aiBaseUrl by mutableStateOf("")
+
+    /** API 密钥：用 Android Keystore 里的 AES 密钥加密后的 Base64（[Translator.protect]），不存明文。 */
+    var aiKeyEnc by mutableStateOf("")
+    var aiModel by mutableStateOf("")
+
+    /** 思考时换用的模型（可选）。 */
+    var aiThinkModel by mutableStateOf("")
+
+    /** 思考：off 不思考 / on 思考 / auto 超过 [aiThinkWords] 个词才思考。 */
+    var aiThink by mutableStateOf("auto")
+    var aiThinkWords by mutableIntStateOf(800)
+    var aiStream by mutableStateOf(true)
+
+    /** 不是目标语言的新闻和评论，出现时自动翻译。 */
+    var autoTranslate by mutableStateOf(false)
+    var translateTo by mutableStateOf("简体中文")
+
     /** 屏蔽的游戏 / 账号：id → 名字。 */
     val blockedApps = mutableStateMapOf<Int, String>()
     val blockedClans = mutableStateMapOf<Int, String>()
@@ -121,6 +144,16 @@ class NewsStore(private val file: File, private val scope: CoroutineScope) {
             showCny = o.optBoolean("showCny", true)
             refreshMinutes = o.optInt("refreshMinutes", 30).coerceIn(0, 24 * 60)
             newsAccount = o.optBoolean("newsAccount")
+            aiFormat = o.optString("aiFormat").takeIf { it == "anthropic" } ?: "openai"
+            aiBaseUrl = o.optString("aiBaseUrl")
+            aiKeyEnc = o.optString("aiKeyEnc")
+            aiModel = o.optString("aiModel")
+            aiThinkModel = o.optString("aiThinkModel")
+            aiThink = o.optString("aiThink").takeIf { it == "off" || it == "on" } ?: "auto"
+            aiThinkWords = o.optInt("aiThinkWords", 800).coerceAtLeast(0)
+            aiStream = o.optBoolean("aiStream", true)
+            autoTranslate = o.optBoolean("autoTranslate")
+            translateTo = o.optString("translateTo").ifEmpty { "简体中文" }
             o.optJSONObject("blockedApps")?.let { b -> b.keys().forEach { k -> k.toIntOrNull()?.let { blockedApps[it] = b.optString(k) } } }
             o.optJSONObject("blockedClans")?.let { b -> b.keys().forEach { k -> k.toIntOrNull()?.let { blockedClans[it] = b.optString(k) } } }
             readUpTo = o.optLong("readUpTo")
@@ -199,6 +232,16 @@ class NewsStore(private val file: File, private val scope: CoroutineScope) {
         o.put("showCny", showCny)
         o.put("refreshMinutes", refreshMinutes)
         o.put("newsAccount", newsAccount)
+        o.put("aiFormat", aiFormat)
+        o.put("aiBaseUrl", aiBaseUrl)
+        o.put("aiKeyEnc", aiKeyEnc)
+        o.put("aiModel", aiModel)
+        o.put("aiThinkModel", aiThinkModel)
+        o.put("aiThink", aiThink)
+        o.put("aiThinkWords", aiThinkWords)
+        o.put("aiStream", aiStream)
+        o.put("autoTranslate", autoTranslate)
+        o.put("translateTo", translateTo)
         o.put("blockedApps", JSONObject().apply { blockedApps.forEach { (k, v) -> put(k.toString(), v) } })
         o.put("blockedClans", JSONObject().apply { blockedClans.forEach { (k, v) -> put(k.toString(), v) } })
         o.put("readUpTo", readUpTo)
