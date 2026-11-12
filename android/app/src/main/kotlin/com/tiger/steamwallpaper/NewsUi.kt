@@ -45,6 +45,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -115,14 +116,20 @@ fun NewsPage() {
             (info.visibleItemsInfo.lastOrNull()?.index ?: 0) >= info.totalItemsCount - 4
         }.collect { near -> if (near && feed.keys.isNotEmpty()) feed.loadMore() }
     }
-    // 打开时回到上次的位置：那一条还在就滚过去，否则停在已读线（刚看过的地方）
-    LaunchedEffect(feed.settled) {
-        if (!feed.settled || feed.restored) return@LaunchedEffect
+    // 打开时（启动和从后台回来时的刷新完成后再一次）回到上次的位置：上次停在「上次看到这里」上面（新的还没看完）就回到那里，
+    // 停在它下面（已经看过的）或找不到时显示「上次看到这里」。用户自己滑过了就不跳
+    LaunchedEffect(feed.restoreTick) {
+        if (feed.restoreTick == 0 || feed.restored) return@LaunchedEffect
         feed.restored = true
-        if (list.firstVisibleItemIndex > 1) return@LaunchedEffect
+        if (feed.touched) return@LaunchedEffect
         val layout = layoutKeys(feed)
-        val i = layout.indexOf(store.posKey).takeIf { it > 0 } ?: layout.indexOf("divider").takeIf { it > 0 }
-        if (i != null) list.scrollToItem(i, if (layout[i] == store.posKey) store.posOffset else 0)
+        val d = layout.indexOf("divider")
+        val p = layout.indexOf(store.posKey)
+        val i = if (p > 0 && (d < 0 || p < d)) p else d
+        if (i > 0) list.scrollToItem(i, if (i == p) store.posOffset else 0)
+    }
+    LaunchedEffect(feed) {
+        list.interactionSource.interactions.collect { if (it is DragInteraction.Start) feed.touched = true }
     }
     // 记下现在看到的位置（停下来 0.4 秒后）
     LaunchedEffect(feed) {
