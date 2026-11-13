@@ -720,26 +720,14 @@ function updateTop() {
 }
 
 // ---------- timeline position (where you were last time) ----------
-// S.tlPos = { id: first wallpaper of the post at the top of the list, off: how far that post is scrolled past the top }
-let posRestored = false, posTimer = 0;
-function savePosition() {
-  const v = current; if (!v || v.kind !== 'timeline' || !posRestored) return;
-  const main = $('#main'), top = main.getBoundingClientRect().top;
-  const post = [...document.querySelectorAll('#grid > .post')].find(p => p.getBoundingClientRect().bottom > top + 1);
-  const tile = post && post.querySelector('.tile'); if (!tile) return;
-  const pos = { id: tile.dataset.id, off: Math.round(top - post.getBoundingClientRect().top) };
-  if (!S.tlPos || S.tlPos.id !== pos.id || S.tlPos.off !== pos.off) { S.tlPos = pos; save(); }
-}
-// once per start, after the timeline has loaded: go back to that post; if it is gone, to the "already read" line
+// once per start, after the timeline has loaded: go to the "already read" line, i.e. where you stopped last time
+// (no line = nothing new since then: stay at the top)
+let posRestored = false;
 function restorePosition(v) {
   posRestored = true;
   const main = $('#main'); if (main.scrollTop > 50) return;   // already scrolled by hand
-  const pos = S.tlPos;
-  const tile = pos && document.querySelector(`#grid .tile[data-id="${pos.id}"]`);
-  let el = tile && tile.closest('.post'), off = el ? pos.off : -60;
-  if (!el) el = $('#divider');
-  if (!el) return;
-  main.scrollTop += el.getBoundingClientRect().top - main.getBoundingClientRect().top + off;
+  const el = $('#divider'); if (!el) return;
+  main.scrollTop += el.getBoundingClientRect().top - main.getBoundingClientRect().top - 60;
   updateTop();
 }
 function openAuthor(steamid) {
@@ -799,13 +787,17 @@ async function loadMore(v) {
 // ---------- reading progress (timeline) ----------
 // readUpTo: publish time; everything at or before it counts as read. Items above it are read one by one as they are
 // shown on screen (seen); once the whole stretch between the newest item and the boundary is seen, the boundary moves up.
-function boundaryIndex(v) { const i = v.ids.findIndex(id => items.get(id).created <= S.readUpTo); return i < 0 ? v.ids.length : i; }
+// lineAt: where the "already read" line is drawn: readUpTo as it was when you last left the window (the page is rebuilt
+// each time the window is opened; minimising or switching away sends "left"). It does not move while you read.
+// "刷新" hides it (0) until you leave again; "全部标为已读" puts it at the top.
+let lineAt = 0;
+function boundaryIndex(v, at) { if (at === undefined) at = S.readUpTo; const i = v.ids.findIndex(id => items.get(id).created <= at); return i < 0 ? v.ids.length : i; }
 function afterTimelineLoad(v) {
   if (!v.ids.length) { setUnread(0); return; }
-  if (!S.readUpTo) { S.readUpTo = items.get(v.ids[0]).created; save(); toast('从现在开始记录时间线的浏览进度', 3500); if (v === current) renderList(); }
-  // keep loading until the old boundary is on the page, so the unread count is right (at most ~600 items)
+  if (!S.readUpTo) { S.readUpTo = lineAt = items.get(v.ids[0]).created; save(); toast('从现在开始记录时间线的浏览进度', 3500); if (v === current) renderList(); }
+  // keep loading until the old boundary (and the line) is on the page, so the unread count is right (at most ~600 items)
   const last = items.get(v.ids[v.ids.length - 1]);
-  if (!v.done && !v.error && last.created > S.readUpTo && v.ids.length < 600) { loadMore(v); return; }
+  if (!v.done && !v.error && last.created > Math.min(S.readUpTo, lineAt || S.readUpTo) && v.ids.length < 600) { loadMore(v); return; }
   updateBoundary(v);
   if (!v.settled) { v.settled = true; if (v === current && !posRestored) restorePosition(v); }
 }
@@ -817,12 +809,11 @@ function updateBoundary(v) {
     S.readUpTo = items.get(v.ids[i + 1]).created;
     for (const id of Object.keys(S.seen)) { const it = items.get(id); if (!it || it.created <= S.readUpTo) delete S.seen[id]; }
     save();
-    if (v === current) placeDivider(v);
   }
   setUnread(v.ids.slice(0, boundaryIndex(v)).filter(id => !S.seen[id] && passesFilters(items.get(id))).length);
 }
 function setUnread(n) { const u = $('#unread'); u.hidden = !n; u.textContent = n > 99 ? '99+' : n; host.call('unread', { n }).catch(() => {}); }
-function markAllRead() { const v = views.timeline; if (!v || !v.ids.length) return; S.readUpTo = items.get(v.ids[0]).created; S.seen = {}; save(); renderList(); updateBoundary(v); }
+function markAllRead() { const v = views.timeline; if (!v || !v.ids.length) return; S.readUpTo = lineAt = items.get(v.ids[0]).created; S.seen = {}; save(); renderList(); updateBoundary(v); }
 const seenObserver = new IntersectionObserver(entries => {
   for (const e of entries) {
     const el = e.target;
@@ -869,12 +860,12 @@ function markSeen(id) {
 function placeDivider(v) {
   const grid = $('#grid'); if (!grid) return;
   const old = $('#divider'); if (old) old.remove();
-  const b = boundaryIndex(v);
+  const b = boundaryIndex(v, lineAt);
   const tiles = [...grid.querySelectorAll('.tile')];
   if (b > 0 && b < v.ids.length) {
-    const tile = tiles.find(t => items.get(t.dataset.id).created <= S.readUpTo);
+    const tile = tiles.find(t => items.get(t.dataset.id).created <= lineAt);
     const target = tile && (tile.closest('.post') || tile);
-    if (target) target.parentNode.insertBefore(h(`<div class="divider" id="divider"><span>以下是<b>已经看过</b>的（${date(S.readUpTo)} 之前）</span></div>`), target);
+    if (target) target.parentNode.insertBefore(h(`<div class="divider" id="divider"><span>上次看到这里 · 以下是<b>已经看过</b>的（${date(lineAt)} 之前）</span></div>`), target);
   }
 }
 
@@ -905,7 +896,7 @@ function tileHtml(it, v, mode) {
 function groupPosts(ids) {
   const posts = []; let cur = null;
   for (const id of ids) {
-    const it = items.get(id), read = it.created <= S.readUpTo;
+    const it = items.get(id), read = it.created <= lineAt;
     if (cur && cur.creator === it.creator && cur.read === read && cur.items.length < 4 && cur.last - it.created < 6 * 3600) { cur.items.push(it); cur.last = it.created; }
     else { cur = { creator: it.creator, read, items: [it], last: it.created }; posts.push(cur); }
   }
@@ -998,12 +989,12 @@ function renderList(keepScroll) {
   const row = v.kind === 'author' ? renderAuthorHead(head, v) : null;
   const bar = h('<div class="bar"></div>');
   if (v.kind === 'timeline') {
-    const b = boundaryIndex(v);
+    const b = boundaryIndex(v, lineAt);
     bar.innerHTML = `<span title="你在 Steam 上关注的作者发布的壁纸，按发布时间排列">关注的作者的新作品</span><label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="merge"${S.mergePosts ? ' checked' : ''}> 合并同一作者的连续上传</label><span class="grow"></span>`;
     bar.querySelector('#merge').onchange = e => { S.mergePosts = e.target.checked; save(); renderList(); };
     const jump = h('<button>跳到上次看到的位置</button>'); jump.disabled = !(b > 0 && b < v.ids.length); jump.onclick = () => { const d = $('#divider'); if (d) d.scrollIntoView({ behavior: 'smooth', block: 'center' }); };
     const all = h('<button>全部标为已读</button>'); all.onclick = markAllRead;
-    const re = h('<button class="ghost" title="重新加载">刷新</button>'); re.onclick = () => { views.timeline = null; openTab('timeline'); };
+    const re = h('<button class="ghost" title="重新加载">刷新</button>'); re.onclick = () => { lineAt = 0; views.timeline = null; openTab('timeline'); };   // refresh: no line until the window is left again
     bar.append(jump, all, re);
   } else if (v.kind === 'author') {
     bar.innerHTML = authorBarHtml(v);
@@ -1779,6 +1770,14 @@ async function onHostEvent(m) {
   else if (m.event === 'auth') { me = await host.call('status'); renderMe(); loadSubs(); }
   else if (m.event === 'showItem') select(m.id, true);
   else if (m.event === 'dupeProgress') { dupe.text = m.text; paintDupeStatus(); }
+  else if (m.event === 'left') windowLeft();
+}
+// the window went to the background / taskbar / tray: what you have read so far becomes "where you stopped last time"
+function windowLeft() {
+  clearTimeout(saveTimer); host.call('saveState', { state: JSON.stringify(S) }).catch(() => {});
+  if (!S.readUpTo || lineAt === S.readUpTo) return;
+  lineAt = S.readUpTo;
+  if (current && current === views.timeline) renderList(true);
 }
 function applyTheme(theme, accent) {
   document.documentElement.classList.toggle('light', theme === 'light');
@@ -1789,6 +1788,7 @@ function applyTheme(theme, accent) {
 (async function start() {
   const q = new URLSearchParams(location.search); applyTheme(q.get('theme'), q.get('accent'));
   try { const st = await host.call('loadState'); if (st) S = Object.assign(S, JSON.parse(st)); } catch (e) { }
+  lineAt = S.readUpTo; delete S.tlPos;   // tlPos: old saved scroll position, no longer used
   S.filters = Object.assign({ type: [], age: [], res: [], genre: [] }, S.filters || {});
   for (const b of document.querySelectorAll('.tab')) b.onclick = () => tabClick(b.dataset.tab);
   $('#totop').onclick = goTop;
@@ -1820,7 +1820,7 @@ function applyTheme(theme, accent) {
     if (!selected) return;
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); step(e.key === 'ArrowRight' ? 1 : -1); }
   });
-  $('#main').addEventListener('scroll', () => { updateTop(); clearTimeout(posTimer); posTimer = setTimeout(savePosition, 500); }, { passive: true });
+  $('#main').addEventListener('scroll', () => { updateTop(); }, { passive: true });
   window.addEventListener('resize', () => { updateTop(); sizeTiles(); });
   document.addEventListener('click', e => {
     const subf = e.target.closest('[data-subf]'); if (subf) { S.authorSub = subf.dataset.subf; save(); renderList(); return; }

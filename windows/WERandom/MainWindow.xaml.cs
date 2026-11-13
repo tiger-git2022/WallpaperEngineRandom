@@ -103,6 +103,16 @@ public partial class MainWindow : FluentWindow
 		_app.Switched += onSwitched;
 		_app.Portrait.StateChanged += onPortrait;
 		_app.UpdateStateChanged += onUpdate;
+		// 创意工坊时间线：离开窗口时记下“上次看到这里”
+		Deactivated += delegate { _workshop?.WindowLeft(); };
+		StateChanged += delegate
+		{
+			if (WindowState == WindowState.Minimized)
+			{
+				_workshop?.WindowLeft();
+			}
+		};
+		Closing += delegate { _workshop?.WindowLeft(); };
 		_refresh = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
 		_refresh.Tick += delegate { UpdateStatus(); };
 		_refresh.Start();
