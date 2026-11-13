@@ -251,6 +251,15 @@ public sealed class WorkshopView : Grid
 		}
 	}
 
+	/// <summary>主窗口失去焦点、最小化或关闭：页面把当前阅读进度记成时间线的“上次看到这里”分割线。</summary>
+	public void WindowLeft()
+	{
+		if (_ready && _web.CoreWebView2 != null)
+		{
+			Post("{\"event\":\"left\"}");
+		}
+	}
+
 	private void Post(string json)
 	{
 		if (!_ready || _web.CoreWebView2 == null)
