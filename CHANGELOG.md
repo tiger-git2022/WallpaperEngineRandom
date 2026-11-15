@@ -2,6 +2,11 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.9.0] - 2026-11-15
+
+### 新增
+- 自动切换不再播放 Wallpaper Engine 文件夹里的壁纸：在 Wallpaper Engine 的壁纸浏览器里放进文件夹（比如「移动」「平板录制」，子文件夹也算）的壁纸，不参与轮换。Wallpaper Engine 里把壁纸移进或移出文件夹后，下次切换就会生效，不用重启。「基本设置」里新增开关「不播放 Wallpaper Engine 文件夹里的壁纸」（默认打开），下面列出现在有哪些文件夹、各有几个壁纸；关掉就和以前一样全部参与。
+
 ## [1.8.1] - 2026-11-13
 
 ### 修复

@@ -139,6 +139,14 @@ public class Engine
 
 	public readonly object ScanLock = new object();
 
+	private string _weFolderSrc;
+
+	private DateTime _weFolderMtime;
+
+	private HashSet<string> _weFolderIds = new HashSet<string>();
+
+	private List<KeyValuePair<string, int>> _weFolderList = new List<KeyValuePair<string, int>>();
+
 	public int LastScanMs;
 
 	public int LastCacheMiss;
@@ -384,6 +392,7 @@ public class Engine
 		LoadMeta();
 		List<PendingMeta> list2 = new List<PendingMeta>();
 		List<PendingMeta> list3 = new List<PendingMeta>();
+		HashSet<string> weFolder = Cfg.ExcludeWeFolders ? WeFolderIds(paths.Exe) : new HashSet<string>();
 		foreach (string item in paths.Workshop)
 		{
 			if (!Directory.Exists(item))
@@ -395,7 +404,7 @@ public class Engine
 			{
 				string text2 = Path.Combine(text, "project.json");
 				string fileName = Path.GetFileName(text);
-				if (Cfg.ExcludeIds.Contains(fileName))
+				if (Cfg.ExcludeIds.Contains(fileName) || weFolder.Contains(fileName))
 				{
 					continue;
 				}
@@ -502,6 +511,109 @@ public class Engine
 		SaveMeta();
 		SetWeights(list);
 		return list;
+	}
+
+	/// <summary>
+	/// Wallpapers the user filed into folders in Wallpaper Engine's own browser
+	/// (config.json: &lt;user&gt;.general.browser.folders, with subfolders). Keys are
+	/// workshop ids or, for local projects, a file path whose parent folder is the
+	/// project folder. Re-read only when config.json changes.
+	/// </summary>
+	private HashSet<string> WeFolderIds(string exe)
+	{
+		string path = "";
+		try
+		{
+			path = Path.Combine(Path.GetDirectoryName(exe) ?? "", "config.json");
+			DateTime mtime = File.GetLastWriteTimeUtc(path);
+			if (path == _weFolderSrc && mtime == _weFolderMtime)
+			{
+				return _weFolderIds;
+			}
+			HashSet<string> ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+			List<KeyValuePair<string, int>> folders = new List<KeyValuePair<string, int>>();
+			if (File.Exists(path))
+			{
+				JObj root = Json.ParseObj(File.ReadAllText(path, Encoding.UTF8));
+				foreach (string user in root.Keys)
+				{
+					List<object> top = (root.Obj(user)?.Obj("general")?.Obj("browser"))?.List("folders");
+					if (top != null)
+					{
+						CollectWeFolders(top, "", ids, folders);
+					}
+				}
+			}
+			bool changed = !ids.SetEquals(_weFolderIds);
+			_weFolderSrc = path;
+			_weFolderMtime = mtime;
+			_weFolderIds = ids;
+			_weFolderList = folders;
+			if (changed)
+			{
+				Log.Log("Wallpaper Engine 文件夹里的壁纸不参与播放：" + string.Join("、", folders.Select((KeyValuePair<string, int> f) => f.Key + "（" + f.Value + "）")) + "，共 " + ids.Count + " 个");
+			}
+		}
+		catch (Exception ex)
+		{
+			Log.Log("读取 Wallpaper Engine 文件夹失败（" + path + "）：" + ex.Message);
+		}
+		return _weFolderIds;
+	}
+
+	private static void CollectWeFolders(List<object> list, string prefix, HashSet<string> ids, List<KeyValuePair<string, int>> folders)
+	{
+		foreach (object o in list)
+		{
+			if (!(o is JObj f))
+			{
+				continue;
+			}
+			string name = prefix + f.Str("title");
+			int n = 0;
+			JObj items = f.Obj("items");
+			if (items != null)
+			{
+				foreach (string key in items.Keys)
+				{
+					string id = key;
+					if (key.IndexOf('/') >= 0 || key.IndexOf('\\') >= 0)
+					{
+						try
+						{
+							id = Path.GetFileName(Path.GetDirectoryName(key.Replace('/', '\\')) ?? "");
+						}
+						catch
+						{
+							continue;
+						}
+					}
+					if (!string.IsNullOrEmpty(id))
+					{
+						ids.Add(id);
+						n++;
+					}
+				}
+			}
+			folders.Add(new KeyValuePair<string, int>(name, n));
+			CollectWeFolders(f.List("subfolders"), name + " / ", ids, folders);
+		}
+	}
+
+	/// <summary>Folder names and item counts from the last read, for the settings page.</summary>
+	public List<KeyValuePair<string, int>> WeFolders()
+	{
+		try
+		{
+			lock (ScanLock)
+			{
+				WeFolderIds(ResolvePaths().Exe);
+			}
+		}
+		catch
+		{
+		}
+		return _weFolderList;
 	}
 
 	public void SetWeights(List<Wallpaper> list)
