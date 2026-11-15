@@ -33,6 +33,9 @@ public class Config
 
 	public List<string> ExcludeIds = new List<string>();
 
+	/// <summary>Skip wallpapers that are in a folder of Wallpaper Engine's browser.</summary>
+	public bool ExcludeWeFolders = true;
+
 	public string WallpaperEnginePath = "";
 
 	public List<string> WorkshopPaths = new List<string>();
@@ -102,6 +105,7 @@ public class Config
 		config.IncludeTypes = (from s in jObj.StrList("includeTypes")
 			select s.ToLowerInvariant()).ToList();
 		config.ExcludeIds = jObj.StrList("excludeIds");
+		config.ExcludeWeFolders = jObj.Bool("excludeWeFolders", config.ExcludeWeFolders);
 		config.WallpaperEnginePath = jObj.Str("wallpaperEnginePath");
 		config.WorkshopPaths = jObj.StrList("workshopPaths");
 		config.IntervalMinutes = Math.Max(1, jObj.Int("intervalMinutes", config.IntervalMinutes));
@@ -137,6 +141,7 @@ public class Config
 		jObj["sameOnAllMonitors"] = SameOnAllMonitors;
 		jObj["includeTypes"] = IncludeTypes.Cast<object>().ToList();
 		jObj["excludeIds"] = ExcludeIds.Cast<object>().ToList();
+		jObj["excludeWeFolders"] = ExcludeWeFolders;
 		jObj["wallpaperEnginePath"] = WallpaperEnginePath;
 		jObj["workshopPaths"] = WorkshopPaths.Cast<object>().ToList();
 		jObj["intervalMinutes"] = IntervalMinutes;

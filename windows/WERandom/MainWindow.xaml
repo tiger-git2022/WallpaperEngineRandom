@@ -304,6 +304,15 @@
                                     </ui:CardControl.Header>
                                     <ui:TextBox x:Name="ExcludeIds" Width="420"/>
                                 </ui:CardControl>
+                                <ui:CardControl Icon="{ui:SymbolIcon Folder24}">
+                                    <ui:CardControl.Header>
+                                        <StackPanel>
+                                            <TextBlock Text="不播放 Wallpaper Engine 文件夹里的壁纸"/>
+                                            <TextBlock x:Name="WeFoldersInfo" Text="在 Wallpaper Engine 里放进文件夹的壁纸" Style="{StaticResource Muted}" TextWrapping="Wrap" MaxWidth="460"/>
+                                        </StackPanel>
+                                    </ui:CardControl.Header>
+                                    <ui:ToggleSwitch x:Name="ExcludeWeFolders"/>
+                                </ui:CardControl>
                                 <ui:CardControl Icon="{ui:SymbolIcon Filter24}">
                                     <ui:CardControl.Header>
                                         <StackPanel>

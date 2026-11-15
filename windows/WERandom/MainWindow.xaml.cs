@@ -706,6 +706,11 @@ public partial class MainWindow : FluentWindow
 		ExePath.Text = cfg.WallpaperEnginePath ?? "";
 		WorkshopPath.Text = cfg.WorkshopPaths.Count > 0 ? cfg.WorkshopPaths[0] : "";
 		ExcludeIds.Text = string.Join(", ", cfg.ExcludeIds.ToArray());
+		ExcludeWeFolders.IsChecked = cfg.ExcludeWeFolders;
+		List<KeyValuePair<string, int>> weFolders = _engine.WeFolders();
+		WeFoldersInfo.Text = weFolders.Count == 0
+			? "在 Wallpaper Engine 里放进文件夹的壁纸（现在没有文件夹）"
+			: "现在的文件夹：" + string.Join("、", weFolders.Select(f => f.Key + "（" + f.Value + " 个）"));
 		TScene.IsChecked = cfg.IncludeTypes.Contains("scene");
 		TVideo.IsChecked = cfg.IncludeTypes.Contains("video");
 		TWeb.IsChecked = cfg.IncludeTypes.Contains("web");
@@ -777,6 +782,7 @@ public partial class MainWindow : FluentWindow
 		cfg.SameOnAllMonitors = SameOnAll.IsChecked == true;
 		cfg.WallpaperEnginePath = ExePath.Text.Trim();
 		cfg.WorkshopPaths = WorkshopPath.Text.Trim().Length > 0 ? new List<string> { WorkshopPath.Text.Trim() } : new List<string>();
+		cfg.ExcludeWeFolders = ExcludeWeFolders.IsChecked == true;
 		cfg.ExcludeIds = ExcludeIds.Text.Split(new[] { ',', ' ', ';', '，' }, StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()).ToList();
 		cfg.IncludeTypes = new List<string>();
 		if (TScene.IsChecked == true)
