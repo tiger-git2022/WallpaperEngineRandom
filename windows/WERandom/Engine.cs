@@ -220,7 +220,30 @@ public class Engine
 		{
 			throw new Exception("找不到创意工坊目录 (steamapps\\workshop\\content\\431960)，请在设置里手动选择。");
 		}
+		if (Cfg.IncludeLocalProjects)
+		{
+			paths2.Local = LocalProjectsDir(paths2.Exe);
+		}
 		return paths2;
+	}
+
+	public static string LocalProjectsDir(string exe)
+	{
+		return Path.Combine(Path.GetDirectoryName(exe) ?? "", "projects", "myprojects");
+	}
+
+	/// <summary>Number of local projects (folders with a project.json), for the settings page.</summary>
+	public int LocalProjectCount()
+	{
+		try
+		{
+			string dir = LocalProjectsDir(ResolvePaths().Exe);
+			return Directory.Exists(dir) ? Directory.GetDirectories(dir).Count((string d) => File.Exists(Path.Combine(d, "project.json"))) : 0;
+		}
+		catch
+		{
+			return 0;
+		}
 	}
 
 	private void LoadMeta()
@@ -393,7 +416,12 @@ public class Engine
 		List<PendingMeta> list2 = new List<PendingMeta>();
 		List<PendingMeta> list3 = new List<PendingMeta>();
 		HashSet<string> weFolder = Cfg.ExcludeWeFolders ? WeFolderIds(paths.Exe) : new HashSet<string>();
-		foreach (string item in paths.Workshop)
+		List<string> sources = paths.Workshop.ToList();
+		if (!string.IsNullOrEmpty(paths.Local))
+		{
+			sources.Add(paths.Local);
+		}
+		foreach (string item in sources)
 		{
 			if (!Directory.Exists(item))
 			{
@@ -1250,7 +1278,7 @@ public class Engine
 		List<Wallpaper> list = Scan(paths);
 		if (list.Count == 0)
 		{
-			Log.Log("创意工坊目录里没有找到壁纸");
+			Log.Log("创意工坊目录和本地项目里都没有找到可播放的壁纸");
 			return null;
 		}
 		List<string> list2 = LoadHistory();

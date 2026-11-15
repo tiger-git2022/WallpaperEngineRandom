@@ -36,6 +36,9 @@ public class Config
 	/// <summary>Skip wallpapers that are in a folder of Wallpaper Engine's browser.</summary>
 	public bool ExcludeWeFolders = true;
 
+	/// <summary>Also play Wallpaper Engine's local projects (projects\myprojects).</summary>
+	public bool IncludeLocalProjects = false;
+
 	public string WallpaperEnginePath = "";
 
 	public List<string> WorkshopPaths = new List<string>();
@@ -106,6 +109,7 @@ public class Config
 			select s.ToLowerInvariant()).ToList();
 		config.ExcludeIds = jObj.StrList("excludeIds");
 		config.ExcludeWeFolders = jObj.Bool("excludeWeFolders", config.ExcludeWeFolders);
+		config.IncludeLocalProjects = jObj.Bool("includeLocalProjects", config.IncludeLocalProjects);
 		config.WallpaperEnginePath = jObj.Str("wallpaperEnginePath");
 		config.WorkshopPaths = jObj.StrList("workshopPaths");
 		config.IntervalMinutes = Math.Max(1, jObj.Int("intervalMinutes", config.IntervalMinutes));
@@ -142,6 +146,7 @@ public class Config
 		jObj["includeTypes"] = IncludeTypes.Cast<object>().ToList();
 		jObj["excludeIds"] = ExcludeIds.Cast<object>().ToList();
 		jObj["excludeWeFolders"] = ExcludeWeFolders;
+		jObj["includeLocalProjects"] = IncludeLocalProjects;
 		jObj["wallpaperEnginePath"] = WallpaperEnginePath;
 		jObj["workshopPaths"] = WorkshopPaths.Cast<object>().ToList();
 		jObj["intervalMinutes"] = IntervalMinutes;

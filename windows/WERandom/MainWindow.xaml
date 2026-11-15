@@ -313,6 +313,15 @@
                                     </ui:CardControl.Header>
                                     <ui:ToggleSwitch x:Name="ExcludeWeFolders"/>
                                 </ui:CardControl>
+                                <ui:CardControl Icon="{ui:SymbolIcon FolderOpen24}">
+                                    <ui:CardControl.Header>
+                                        <StackPanel>
+                                            <TextBlock Text="也播放本地项目"/>
+                                            <TextBlock x:Name="LocalProjectsInfo" Text="Wallpaper Engine 的 projects\myprojects（自己做的、导入的壁纸）" Style="{StaticResource Muted}" TextWrapping="Wrap" MaxWidth="460"/>
+                                        </StackPanel>
+                                    </ui:CardControl.Header>
+                                    <ui:ToggleSwitch x:Name="IncludeLocalProjects"/>
+                                </ui:CardControl>
                                 <ui:CardControl Icon="{ui:SymbolIcon Filter24}">
                                     <ui:CardControl.Header>
                                         <StackPanel>

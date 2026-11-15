@@ -2,6 +2,11 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.10.0] - 2026-11-15
+
+### 新增
+- 「基本设置」新增开关「也播放本地项目」（默认关闭）：打开后，Wallpaper Engine 的 `projects\myprojects` 里的本地项目（自己做的、导入的、录制的壁纸）也参与自动切换，按添加时间和创意工坊壁纸一样分档。放进 Wallpaper Engine 文件夹的本地项目仍按「不播放 Wallpaper Engine 文件夹里的壁纸」排除。开关下面显示现在有几个本地项目；「壁纸预览」顶部会多显示本地项目的目录。
+
 ## [1.9.0] - 2026-11-15
 
 ### 新增
