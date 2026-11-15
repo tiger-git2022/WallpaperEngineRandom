@@ -707,6 +707,8 @@ public partial class MainWindow : FluentWindow
 		WorkshopPath.Text = cfg.WorkshopPaths.Count > 0 ? cfg.WorkshopPaths[0] : "";
 		ExcludeIds.Text = string.Join(", ", cfg.ExcludeIds.ToArray());
 		ExcludeWeFolders.IsChecked = cfg.ExcludeWeFolders;
+		IncludeLocalProjects.IsChecked = cfg.IncludeLocalProjects;
+		LocalProjectsInfo.Text = "Wallpaper Engine 的 projects\\myprojects（自己做的、导入的壁纸），现在有 " + _engine.LocalProjectCount() + " 个；放进文件夹的仍按上一项不播放";
 		List<KeyValuePair<string, int>> weFolders = _engine.WeFolders();
 		WeFoldersInfo.Text = weFolders.Count == 0
 			? "在 Wallpaper Engine 里放进文件夹的壁纸（现在没有文件夹）"
@@ -783,6 +785,7 @@ public partial class MainWindow : FluentWindow
 		cfg.WallpaperEnginePath = ExePath.Text.Trim();
 		cfg.WorkshopPaths = WorkshopPath.Text.Trim().Length > 0 ? new List<string> { WorkshopPath.Text.Trim() } : new List<string>();
 		cfg.ExcludeWeFolders = ExcludeWeFolders.IsChecked == true;
+		cfg.IncludeLocalProjects = IncludeLocalProjects.IsChecked == true;
 		cfg.ExcludeIds = ExcludeIds.Text.Split(new[] { ',', ' ', ';', '，' }, StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()).ToList();
 		cfg.IncludeTypes = new List<string>();
 		if (TScene.IsChecked == true)
@@ -911,6 +914,10 @@ public partial class MainWindow : FluentWindow
 			}
 		}
 		text += "\r\nWallpaper Engine：" + p.Paths.Exe + "　创意工坊：" + string.Join("; ", p.Paths.Workshop.ToArray());
+		if (!string.IsNullOrEmpty(p.Paths.Local))
+		{
+			text += "　本地项目：" + p.Paths.Local;
+		}
 		Summary.Text = text;
 		var rows = new List<PreviewRow>(p.All.Count);
 		foreach (Wallpaper w in p.All)
