@@ -120,6 +120,15 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         val app = App.instance
+        if (stoppedAt > 0) {
+            // 在后台放了一会儿：手机睡眠时 OkHttp 的计时（不含睡眠的时间）不走，它以为连接只闲了一小会儿，
+            // 会接着用其实早已断掉的连接，这时的请求（图片、新闻）要等超时才失败。先把闲着的连接都扔掉，重新连。
+            if (android.os.SystemClock.elapsedRealtime() - stoppedAt > 30_000) {
+                app.scope.launch(kotlinx.coroutines.Dispatchers.IO) { app.steam.http.connectionPool.evictAll() }
+            }
+            stoppedAt = 0
+            ImageRetry.resumes.intValue++
+        }
         app.workshop.refreshLogin()
         app.news.refreshLogin()
         app.workshop.resumeTimeline()
@@ -130,6 +139,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
+        stoppedAt = android.os.SystemClock.elapsedRealtime()
         // 离开（切到后台、锁屏、退出）：记下「上次看到这里」
         App.instance.news.leave()
         App.instance.workshop.leave()
@@ -138,6 +148,8 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private var started = false
+        /** 上次切到后台的时间（elapsedRealtime，含睡眠）；0 = 没在后台。 */
+        private var stoppedAt = 0L
     }
 }
 

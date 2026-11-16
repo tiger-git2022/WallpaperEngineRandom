@@ -77,7 +77,6 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil3.compose.AsyncImage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -505,7 +504,7 @@ private fun AppCard(a: AppInfo, modifier: Modifier = Modifier) {
             .clickable { openUrl(context, a.url) },
     ) {
         if (a.capsule.isNotEmpty()) {
-            AsyncImage(
+            NetImage(
                 model = a.capsule, contentDescription = null, contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxWidth().aspectRatio(616f / 353f).background(MaterialTheme.colorScheme.surfaceVariant),
             )
@@ -630,7 +629,7 @@ private fun GameBanner(appid: Int, url: String) {
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(460f / 215f)) {
             if (a == null || a.header.isEmpty()) LoadingShimmer(Modifier.fillMaxSize())
-            else AsyncImage(model = a.header, contentDescription = a.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            else NetImage(model = a.header, contentDescription = a.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -652,7 +651,7 @@ private fun VideoThumb(poster: String, label: String, onClick: () -> Unit) {
         Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(14.dp)).background(Color.Black).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        if (poster.isNotEmpty()) AsyncImage(model = poster, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        if (poster.isNotEmpty()) NetImage(model = poster, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         Row(
             Modifier.clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = 0.6f)).padding(horizontal = 14.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
