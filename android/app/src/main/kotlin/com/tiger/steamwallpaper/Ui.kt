@@ -101,6 +101,13 @@ import androidx.compose.ui.unit.sp
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import coil3.compose.AsyncImage
+import coil3.compose.AsyncImagePainter
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.max
@@ -145,7 +152,7 @@ fun PreviewImage(
         // 还没加载出来时：灰底上一道高光一直从左往右扫，看得出在加载
         var loading by remember(url) { mutableStateOf(url.isNotEmpty()) }
         if (loading) LoadingShimmer(Modifier.fillMaxSize())
-        AsyncImage(
+        NetImage(
             model = small(url, px),
             contentDescription = null,
             contentScale = contentScale,
@@ -161,7 +168,7 @@ fun PreviewImage(
         )
         if (animate && url.isNotEmpty()) {
             var ready by remember(url) { mutableStateOf(false) }
-            AsyncImage(
+            NetImage(
                 model = url,
                 contentDescription = null,
                 contentScale = contentScale,
@@ -170,6 +177,68 @@ fun PreviewImage(
                 onSuccess = { ready = true },
             )
         }
+    }
+}
+
+/** 回到 App 的次数（MainActivity.onResume 加一）：加载失败的图片在回到 App 时重新加载。 */
+object ImageRetry {
+    val resumes = mutableIntStateOf(0)
+}
+
+/** 加载失败后自动重试前等的时间；试完这几次以后只在回到 App 时再试。 */
+private val RetryDelays = longArrayOf(2_000, 5_000, 15_000)
+
+/** 图片本身不存在、没权限（4xx）时重试也没用；超时、断网、5xx 之类都值得再试。 */
+private fun retryable(t: Throwable): Boolean {
+    val code = (t as? coil3.network.HttpException)?.response?.code ?: return true
+    return code >= 500 || code == 408 || code == 429
+}
+
+/**
+ * 网络图片，用法同 AsyncImage。加载失败时不会一直空着（App 在后台放久了以后连接已经断了、刚回来网络还没通，
+ * 都会让这时候的请求失败，AsyncImage 自己不会重试，要重启 App 才显示）：过 2、5、15 秒自动重试，
+ * 之后每次回到 App 再试一次。
+ */
+@Composable
+fun NetImage(
+    model: Any?,
+    contentDescription: String?,
+    modifier: Modifier = Modifier,
+    contentScale: ContentScale = ContentScale.Fit,
+    filterQuality: FilterQuality = DrawScope.DefaultFilterQuality,
+    onLoading: ((AsyncImagePainter.State.Loading) -> Unit)? = null,
+    onSuccess: ((AsyncImagePainter.State.Success) -> Unit)? = null,
+    onError: ((AsyncImagePainter.State.Error) -> Unit)? = null,
+) {
+    var attempt by remember(model) { mutableIntStateOf(0) }
+    var failed by remember(model) { mutableStateOf(false) }
+    var auto by remember(model) { mutableIntStateOf(0) }
+    LaunchedEffect(model, failed) {
+        if (!failed) return@LaunchedEffect
+        val start = ImageRetry.resumes.intValue
+        // 等到自动重试的时间，或者回到 App（哪个先到算哪个）
+        val resumed = withTimeoutOrNull(RetryDelays.getOrElse(auto) { Long.MAX_VALUE }) {
+            snapshotFlow { ImageRetry.resumes.intValue }.first { it != start }
+        } != null
+        if (resumed) auto = 0 else auto++
+        failed = false
+        attempt++
+    }
+    // 换一个 key 就是一个新的 AsyncImage：重新发请求（失败的结果 Coil 不缓存）
+    key(attempt) {
+        AsyncImage(
+            model = model,
+            contentDescription = contentDescription,
+            modifier = modifier,
+            contentScale = contentScale,
+            filterQuality = filterQuality,
+            onLoading = onLoading,
+            onSuccess = onSuccess,
+            onError = { e ->
+                if (retryable(e.result.throwable)) failed = true
+                onError?.invoke(e)
+            },
+        )
     }
 }
 
@@ -237,7 +306,7 @@ fun BigPicture(url: String, modifier: Modifier = Modifier, maxHeight: Dp = 480.d
 @Composable
 fun Avatar(url: String, size: Dp, modifier: Modifier = Modifier, shape: androidx.compose.ui.graphics.Shape = CircleShape) {
     Box(modifier.size(size).clip(shape).background(MaterialTheme.colorScheme.surfaceVariant)) {
-        if (url.isNotEmpty()) AsyncImage(model = url, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        if (url.isNotEmpty()) NetImage(model = url, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
     }
 }
 

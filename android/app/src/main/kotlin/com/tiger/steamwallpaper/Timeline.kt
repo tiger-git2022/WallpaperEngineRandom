@@ -50,7 +50,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil3.compose.AsyncImage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 
@@ -344,7 +343,7 @@ fun PreviewStrip(it: Item, current: String, onPick: (String) -> Unit) {
     LazyRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         items(images) { url ->
             val on = url == current
-            AsyncImage(
+            NetImage(
                 model = small(url, 160), contentDescription = null, contentScale = ContentScale.Crop,
                 modifier = Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant)
                     .then(if (on) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp)) else Modifier.alpha(0.75f))
@@ -353,7 +352,7 @@ fun PreviewStrip(it: Item, current: String, onPick: (String) -> Unit) {
         }
         items(it.videos) { y ->
             Box(contentAlignment = Alignment.Center) {
-                AsyncImage(
+                NetImage(
                     model = "https://i.ytimg.com/vi/$y/mqdefault.jpg", contentDescription = "YouTube 视频", contentScale = ContentScale.Crop,
                     modifier = Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant)
                         .clickable { openUrl(context, "https://www.youtube.com/watch?v=$y") },
