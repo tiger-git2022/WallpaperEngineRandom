@@ -46,7 +46,7 @@ class App : Application(), SingletonImageLoader.Factory {
         store = Store(java.io.File(filesDir, "workshop.json"), scope)
         store.load()
         // 订阅账号（大号）：cookie 在 WebView 的另一个配置文件里，没登录过时不碰它
-        val sub = Steam(cookieSource = { if (store.subAccount) SubProfile.cookieManager() else null }, client = steam.http)
+        val sub = Steam(cookieSource = { if (store.subAccount) SubProfile.cookieManager() else null }, client = steam.http, webProfile = SubProfile, label = "订阅账号")
         workshop = Workshop(steam, sub, store, scope)
         updater = Updater(this, steam.http, store, scope)
         // 新闻：登录了新闻专用账号就用它（WebView 的另一个配置文件），否则用浏览账号

@@ -1,9 +1,12 @@
 package com.tiger.steamwallpaper
 
+import android.os.SystemClock
 import android.text.Html
 import android.webkit.CookieManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
@@ -29,10 +32,13 @@ class SteamException(val status: Int, message: String) : Exception(message)
 /**
  * 一个 Steam 账号的会话。[cookieSource] 是存它的登录 cookie 的 CookieManager（浏览账号用系统默认的，订阅账号用
  * WebView 的另一个配置文件，见 [SubProfile]）；为 null 时算没登录。[client] 给第二个账号共用连接。
+ * [webProfile] 是续期登录时用的 WebView 配置文件（null = 默认的，即浏览账号），[label] 写日志用。
  */
 class Steam(
     private val cookieSource: () -> CookieManager? = { CookieManager.getInstance() },
     client: OkHttpClient? = null,
+    private val webProfile: WebProfile? = null,
+    private val label: String = "浏览账号",
 ) {
     companion object {
         const val APP_ID = "431960"
@@ -83,6 +89,10 @@ class Steam(
 
     val loggedIn: Boolean get() = steamId.isNotEmpty()
 
+    /** steamLoginSecure 的到期时间（秒，JWT 里的 exp）；读不出来时当作一直有效。 */
+    @Volatile var expires: Long = 0L
+        private set
+
     private var token: String? = null
     private var tokenTime = 0L
     private val profiles = HashMap<String, Profile>()
@@ -105,11 +115,14 @@ class Steam(
             if (eq > 0) map[part.substring(0, eq).trim()] = part.substring(eq + 1).trim()
         }
         var id = ""
+        var exp = 0L
         map["steamLoginSecure"]?.let { sls ->
             val decoded = runCatching { URLDecoder.decode(sls, "UTF-8") }.getOrDefault(sls)
             val bar = decoded.indexOf('|')
             if (bar > 0 && STEAM_ID.matches(decoded.substring(0, bar))) id = decoded.substring(0, bar)
+            exp = jwtExpiry(decoded.substringAfterLast('|'))
         }
+        expires = exp
         // sessionid 只是防跨站的随机值，表单里和 cookie 里一样即可；还没有时自己生成一个
         if (id.isNotEmpty() && "sessionid" !in map) {
             val sid = randomHex(24)
@@ -132,8 +145,56 @@ class Steam(
         }
         cookies = emptyMap()
         steamId = ""
+        expires = 0L
         synchronized(this) { token = null }
     }
+
+    /** JWT 里的 exp（秒）；读不出来时当作一直有效（只在网页显示没登录时才续期）。 */
+    private fun jwtExpiry(jwt: String): Long = runCatching {
+        val part = jwt.split('.')[1]
+        val json = String(android.util.Base64.decode(part, android.util.Base64.URL_SAFE or android.util.Base64.NO_PADDING or android.util.Base64.NO_WRAP))
+        JSONObject(json).optLong("exp").takeIf { it > 0 }
+    }.getOrNull() ?: Long.MAX_VALUE
+
+    // ---- 续期 ----
+
+    private val renewLock = Mutex()
+
+    /** 上次续期的时间（开机以来的毫秒）；null = 还没续过。 */
+    @Volatile private var lastRenewAt: Long? = null
+
+    private val now: Long get() = System.currentTimeMillis() / 1000
+
+    /**
+     * 登录票据（steamLoginSecure，大约一天过期）快到期或已过期时续期：在看不见的 WebView 里用这个账号的配置文件
+     * 打开一次社区页面，Steam 会用长期的刷新票据换一张新的。几个请求同时发现时只续一次；续过后 10 分钟内不再续
+     * （刷新票据也失效时别每个请求都试）。[force]：不管到期时间（网页显示没登录时）。
+     */
+    private suspend fun ensureFresh(force: Boolean = false) {
+        if (!loggedIn || (!force && expires > now + 600)) return
+        val asked = SystemClock.elapsedRealtime()
+        renewLock.withLock {
+            val last = lastRenewAt
+            // 等锁的时候别的请求已经续过了
+            if (last != null && last >= asked) return
+            if (!loggedIn || (!force && expires > now + 600)) return
+            if (last != null && SystemClock.elapsedRealtime() - last < 10 * 60_000L) return
+            lastRenewAt = SystemClock.elapsedRealtime()
+            val before = expires
+            withContext(Dispatchers.Main) {
+                renewInHiddenWebView(webProfile, "$COMMUNITY/my/", COMMUNITY)
+                syncCookies()
+            }
+            synchronized(this) { token = null }
+            Log.i(
+                if (!loggedIn) "${label}续期登录后没登录了"
+                else "${label}续期登录：票据到 ${expText(expires)}（之前到 ${expText(before)}）",
+            )
+        }
+    }
+
+    /** 网页上写着没登录（登录过期了，或者到期时间读错了）。 */
+    private fun loggedOutPage(html: String): Boolean = "g_steamID = false" in html
 
     private fun randomHex(n: Int): String {
         val bytes = ByteArray(n / 2).also { SecureRandom().nextBytes(it) }
@@ -146,7 +207,19 @@ class Steam(
 
     // ---- http ----
 
-    private suspend fun get(url: String, withCookies: Boolean = true): String = withContext(Dispatchers.IO) {
+    /** GET 社区；登录了的话先看票据要不要续期，网页显示没登录时强制续期再试一次。 */
+    private suspend fun get(url: String, withCookies: Boolean = true): String {
+        if (!withCookies || !loggedIn) return send(url, withCookies)
+        ensureFresh()
+        val text = send(url, true)
+        if (loggedIn && loggedOutPage(text)) {
+            ensureFresh(force = true)
+            return send(url, true)
+        }
+        return text
+    }
+
+    private suspend fun send(url: String, withCookies: Boolean): String = withContext(Dispatchers.IO) {
         val b = Request.Builder().url(url)
         if (withCookies && cookies.isNotEmpty()) b.header("Cookie", cookieHeader())
         http.newCall(b.build()).execute().use { resp ->
@@ -156,7 +229,25 @@ class Steam(
         }
     }
 
-    private suspend fun postCommunity(url: String, form: Map<String, String>): String = withContext(Dispatchers.IO) {
+    /** POST 社区的表单；Steam 回的是网页（跳到了登录页）或「没登录 / 没权限」时强制续期再试一次。 */
+    private suspend fun postCommunity(url: String, form: Map<String, String>): String {
+        requireLogin()
+        ensureFresh()
+        val text = sendPost(url, form)
+        if (loggedIn && needsLogin(text)) {
+            ensureFresh(force = true)
+            return sendPost(url, form)
+        }
+        return text
+    }
+
+    private fun needsLogin(text: String): Boolean {
+        if (text.trimStart().startsWith("<")) return true
+        val code = runCatching { JSONObject(text).opt("success") }.getOrNull()
+        return code is Number && (code.toInt() == 15 || code.toInt() == 21)
+    }
+
+    private suspend fun sendPost(url: String, form: Map<String, String>): String = withContext(Dispatchers.IO) {
         requireLogin()
         val body = FormBody.Builder().apply { form.forEach { (k, v) -> add(k, v) } }.build()
         val req = Request.Builder().url(url).post(body)
@@ -182,8 +273,13 @@ class Steam(
             val t = token
             if (!refresh && t != null && System.currentTimeMillis() - tokenTime < 3600_000) return t
         }
-        val text = get("$COMMUNITY/pointssummary/ajaxgetasyncconfig")
-        val t = runCatching { JSONObject(text).optJSONObject("data")?.optString("webapi_token") }.getOrNull().orEmpty()
+        fun parse(text: String) = runCatching { JSONObject(text).optJSONObject("data")?.optString("webapi_token") }.getOrNull().orEmpty()
+        var t = parse(get("$COMMUNITY/pointssummary/ajaxgetasyncconfig"))
+        if (t.isEmpty() && loggedIn) {
+            // 没发令牌：登录票据过期了，续期后再要一次
+            ensureFresh(force = true)
+            t = parse(get("$COMMUNITY/pointssummary/ajaxgetasyncconfig"))
+        }
         if (t.isEmpty()) throw SteamException(401, "Steam 登录已失效，请重新登录")
         synchronized(this) {
             token = t
