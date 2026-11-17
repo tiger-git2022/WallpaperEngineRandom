@@ -1,17 +1,12 @@
 package com.tiger.steamwallpaper
 
-import android.annotation.SuppressLint
 import android.os.SystemClock
 import android.webkit.CookieManager
-import android.webkit.WebView
-import android.webkit.WebViewClient
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -131,31 +126,9 @@ class StoreSession(private val http: OkHttpClient, private val scope: CoroutineS
     }
 
     /** 在看不见的 WebView 里打开一次商店的账号页面：票据过期时 Steam 会跳到 login.steampowered.com 换一张新的再跳回来。 */
-    @SuppressLint("SetJavaScriptEnabled")
     private suspend fun renewOnce() {
         val before = expires
-        val back = CompletableDeferred<Unit>()
-        val web = runCatching { WebView(App.instance) }.getOrElse {
-            Log.e("续期商店登录：建不了 WebView", it)
-            return
-        }
-        try {
-            profile()?.use(web)
-            web.settings.javaScriptEnabled = true
-            web.settings.domStorageEnabled = true
-            cookieManager().setAcceptThirdPartyCookies(web, true)
-            web.webViewClient = object : WebViewClient() {
-                override fun onPageFinished(view: WebView, url: String) {
-                    if (url.startsWith(STORE) && "/login" !in url) back.complete(Unit)
-                }
-            }
-            web.loadUrl("$STORE/account/")
-            withTimeoutOrNull(30_000) { back.await() }
-            cookieManager().flush()
-        } finally {
-            web.stopLoading()
-            web.destroy()
-        }
+        renewInHiddenWebView(profile(), "$STORE/account/", STORE)
         syncCookies()
         Log.i(if (loggedIn && expires > now + 600) "商店登录已续期，到 ${expText(expires)}" else "商店登录续期失败（票据到 ${expText(before)}）")
     }
@@ -222,4 +195,4 @@ class StoreSession(private val http: OkHttpClient, private val scope: CoroutineS
     }
 }
 
-private fun expText(t: Long) = if (t <= 0 || t == Long.MAX_VALUE) "未知" else whenText(t).ifEmpty { date(t) }
+internal fun expText(t: Long) = if (t <= 0 || t == Long.MAX_VALUE) "未知" else whenText(t).ifEmpty { date(t) }
